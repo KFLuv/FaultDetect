@@ -136,6 +136,8 @@ java -jar java-backend/target/fault-detect-system.jar
 
 ## 📖 使用说明
 
+> 文档入口：[产品文档](docs/产品文档.md) · [设计文档](docs/设计文档.md) · [评测报告](docs/评测报告.md) · [PRD](docs/PRD.md)
+
 详细操作指南见 [使用指南-Java版.md](使用指南-Java版.md)，涵盖：
 
 - 快速开始与启动自检
