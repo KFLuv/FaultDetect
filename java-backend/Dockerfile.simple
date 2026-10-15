@@ -1,0 +1,20 @@
+# 故障检测系统 - Java 版（极简构建，直接复用已打包的 jar）
+# 用途：避免多阶段构建去拉 maven:3.9-eclipse-temurin-11（约 500MB）
+# 前置：先在本机执行 mvn -f java-backend/pom.xml clean package -DskipTests 生成 target/fault-detect-system.jar
+# 构建：docker build -f java-backend/Dockerfile.simple -t fault-detect-system-java:latest java-backend
+FROM eclipse-temurin:11-jre
+
+ENV FAULT_DETECT_DATA_DIR=/app/data \
+    TZ=Asia/Shanghai \
+    JAVA_TOOL_OPTIONS="-Dfile.encoding=UTF-8"
+
+WORKDIR /app
+
+# 直接复用已构建好的可执行 jar（内含前端静态资源）
+COPY target/fault-detect-system.jar /app/fault-detect-system.jar
+
+RUN mkdir -p /app/data
+
+EXPOSE 8000
+
+CMD ["java", "-jar", "/app/fault-detect-system.jar"]
