@@ -1,7 +1,7 @@
 # FaultDetect · 目录说明
 
 > 现场排障 AI 诊断系统（Java 版 v2.0）
-> 源码：https://github.com/KFLuv/fault-detect-system
+> 源码：https://github.com/KFLuv/FaultDetect
 
 ---
 

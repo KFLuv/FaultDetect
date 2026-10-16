@@ -5,7 +5,7 @@
 | 文档版本 | v1.0 |
 | 产品版本 | Java 版 v2.0 |
 | 作者 | 杨博全（产品设计 · 开发 · 评测） |
-| 状态 | 已上线可用，开源：github.com/KFLuv/fault-detect-system |
+| 状态 | 已上线可用，开源：github.com/KFLuv/FaultDetect |
 | 关联文档 | `docs/产品文档.md`（定位与决策）· `docs/设计文档.md`（架构）· `docs/评测报告.md`（评测数据） |
 
 ---
