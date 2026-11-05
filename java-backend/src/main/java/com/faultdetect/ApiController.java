@@ -2,8 +2,12 @@ package com.faultdetect;
 
 import com.faultdetect.DetectEngine.DetectionResult;
 import com.faultdetect.Knowledge.Scenario;
-import org.springframework.web.bind.annotation.CrossOrigin;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -17,6 +21,7 @@ import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 import java.util.regex.Pattern;
 
@@ -24,8 +29,8 @@ import java.util.regex.Pattern;
  * API 控制器（接口与 Python 版完全一致）
  *   GET  /api/health          健康检查
  *   GET  /api/selfcheck       【自检】观测层可信度一键校验（独立真值 vs 系统实测）
- *   GET  /api/status-codes    32 个状态码
- *   GET  /api/scenarios       92 个场景（支持 ?code= 过滤）
+ *   GET  /api/status-codes    59 个状态码
+ *   GET  /api/scenarios       132 个场景（支持 ?code= 过滤）
  *   POST /api/detect          执行故障检测
  *   POST /api/add-scenario    新增场景
  *   GET  /api/history         检测历史
@@ -33,8 +38,10 @@ import java.util.regex.Pattern;
  * 前端页面由 src/main/resources/static 静态资源提供（/ 与 /static/*）
  */
 @RestController
-@CrossOrigin(origins = "*")
 public class ApiController {
+
+    private static final AtomicLong REPORT_SEQUENCE = new AtomicLong();
+    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final Knowledge knowledge;
     private final DetectEngine detectEngine;
@@ -77,6 +84,8 @@ public class ApiController {
          * 不满足时不会发起任何外部请求；内网不可达 / 调用失败会自动降级为纯规则结论，不影响检测结果。
          */
         public boolean enable_llm = false;
+        /** 用户必须确认已获得目标系统授权，避免把工具误用到未授权系统。 */
+        public boolean authorized_target = false;
     }
 
     public static class AddScenarioRequest {
@@ -88,6 +97,24 @@ public class ApiController {
         public String conclusion = "";
         public List<String> solution = new ArrayList<>();
         public String priority = "中";
+    }
+
+    public static class CaseUpdateRequest {
+        public String status;
+        public String owner = "";
+        public String note = "";
+        public String closed_reason = "";
+    }
+
+    public static class UnknownPromotionRequest {
+        public String scenario_name = "";
+        public String root_cause;
+        public String conclusion;
+        public String owner = "";
+        public List<String> evidence = new ArrayList<>();
+        public List<String> solution = new ArrayList<>();
+        public List<String> response_patterns = new ArrayList<>();
+        public List<String> ui_symptoms = new ArrayList<>();
     }
 
     // ================= 辅助 =================
@@ -128,7 +155,19 @@ public class ApiController {
     }
 
     private static String nowCompact() {
-        return new SimpleDateFormat("yyyyMMddHHmmss").format(new Date());
+        long seq = REPORT_SEQUENCE.updateAndGet(v -> v >= 999 ? 1 : v + 1);
+        return new SimpleDateFormat("yyyyMMddHHmmssSSS").format(new Date())
+                + String.format("%03d", seq);
+    }
+
+    private static String redactUrl(String url) {
+        if (url == null) {
+            return "";
+        }
+        String redacted = url.replaceAll(
+                "(?i)([?&](?:token|access_token|api_key|key|password|passwd|secret|session|auth)[^=]*=)[^&#]*",
+                "$1***");
+        return redacted.replaceAll("(?<=://)[^/@:]+:[^/@]+@", "***@");
     }
 
     // ================= 接口 =================
@@ -137,6 +176,8 @@ public class ApiController {
     public Map<String, Object> health() {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("status", "ok");
+        m.put("version", "1.3.0");
+        m.put("security_mode", "local-only");
         m.put("total_scenarios", allScenarios().size());
         m.put("total_status_codes", knowledge.statusCodes.size());
         return m;
@@ -187,46 +228,61 @@ public class ApiController {
         if (req.url == null || req.url.trim().isEmpty()) {
             throw new ApiException(400, "URL 不能为空");
         }
+        if (!req.authorized_target) {
+            throw new ApiException(400, "请先确认已获得目标系统的诊断授权");
+        }
         String url = req.url.trim();
         // 先校验 URL（不合法直接 400，与 Python 版一致）
         detectEngine.parseUrl(url);
 
         int timeout = Math.max(3, Math.min(req.timeout, 30));
         Map<String, String> headers = validateHeaders(req.headers);
-        DetectionResult dr = detectEngine.runDetection(url, req.enable_service_check, true, timeout, headers);
-        // 【P1】差分隔离实验：默认开启，可通过 enable_contrast=false 关闭。
-        // 必须在 buildReport 之前执行：其推导结论与新增的第 6 步会一并进入报告与证据链。
-        if (req.enable_contrast && dr.error == null) {
-            contrastProbe.run(dr, headers, timeout);
-        }
         String symptom = req.symptom == null ? "" : req.symptom;
-        // 【P3】enable_llm 默认 false：不勾选时后端不会发起任何外部请求（保持零外部依赖）
-        Map<String, Object> report = matcherEngine.buildReport(dr, symptom, 3, req.enable_llm);
+        String historyUrl = redactUrl(url);
+        String reportId = "RPT_" + nowCompact();
+        history.startCase(reportId, historyUrl, symptom);
 
-        if (!report.containsKey("error")) {
-            @SuppressWarnings("unchecked")
-            Map<String, Object> conclusion = (Map<String, Object>) report.get("conclusion");
-            history.saveHistory(url, (String) report.get("status_code"), conclusion);
+        try {
+            DetectionResult dr = detectEngine.runDetection(
+                    url, req.enable_service_check, true, timeout, headers);
+            if (req.enable_contrast && dr.error == null) {
+                contrastProbe.run(dr, headers, timeout);
+            }
+            Map<String, Object> report = matcherEngine.buildReport(
+                    dr, symptom, 3, req.enable_llm);
+
+            Map<String, Object> out = new LinkedHashMap<>();
+            out.put("report_id", reportId);
+            out.put("timestamp", now());
+            out.put("input_url", url);
+            out.put("status_code", report.get("status_code"));
+            out.put("status_text", report.get("status_text"));
+            out.put("steps", report.get("steps"));
+            out.put("evidence_chain", report.get("evidence_chain"));
+            out.put("conclusion", report.get("conclusion"));
+            out.put("report", report.get("report"));
+            out.put("key_info", report.get("key_info"));
+            out.put("contrast", dr.contrast == null ? Collections.emptyMap() : dr.contrast);
+            out.put("hypotheses", report.get("hypotheses"));
+            out.put("llm", report.get("llm"));
+            out.put("unknown_mode", report.get("unknown_mode"));
+
+            if (report.containsKey("error")) {
+                history.failCase(reportId, String.valueOf(report.get("error")));
+            } else {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> conclusion = (Map<String, Object>) report.get("conclusion");
+                Map<String, Object> persistedReport = new LinkedHashMap<>(out);
+                persistedReport.put("input_url", historyUrl);
+                history.completeCase(reportId, historyUrl, symptom,
+                        String.valueOf(report.get("status_code")), conclusion,
+                        MAPPER.writeValueAsString(persistedReport));
+            }
+            return out;
+        } catch (RuntimeException | com.fasterxml.jackson.core.JsonProcessingException e) {
+            history.failCase(reportId, e.getMessage());
+            throw new ApiException(500, "诊断任务失败：" + e.getMessage());
         }
-
-        Map<String, Object> out = new LinkedHashMap<>();
-        out.put("report_id", "RPT_" + nowCompact());
-        out.put("timestamp", now());
-        out.put("input_url", url);
-        out.put("status_code", report.get("status_code"));
-        out.put("status_text", report.get("status_text"));
-        out.put("steps", report.get("steps"));
-        out.put("evidence_chain", report.get("evidence_chain"));
-        out.put("conclusion", report.get("conclusion"));
-        out.put("report", report.get("report"));
-        out.put("key_info", report.get("key_info"));   // 【P0-2】追加字段，既有字段顺序与含义均不变
-        // 【P1】差分隔离实验结果（对照矩阵 + 差分推导结论）：追加字段，既有字段顺序与含义均不变
-        out.put("contrast", dr.contrast == null ? Collections.emptyMap() : dr.contrast);
-        // 【P2】通用假设推理结果（多假设：描述 / 置信度 / 支持证据 / 反证条件 / 验证动作）：追加字段
-        out.put("hypotheses", report.get("hypotheses"));
-        // 【P3】可选 LLM 增强分析结果（未请求 / 未启用 / 已降级 / 成功均如实返回）：追加字段
-        out.put("llm", report.get("llm"));
-        return out;
     }
 
     @PostMapping("/api/add-scenario")
@@ -280,6 +336,148 @@ public class ApiController {
         return m;
     }
 
+    @GetMapping("/api/history/{reportId}")
+    public Map<String, Object> historyDetail(@PathVariable String reportId) {
+        Map<String, Object> report = history.getReport(reportId);
+        if (report == null) {
+            throw new ApiException(404, "报告不存在或已删除");
+        }
+        return report;
+    }
+
+    @PostMapping("/api/history/{reportId}/follow-up")
+    public Map<String, Object> updateFollowUp(@PathVariable String reportId,
+                                              @RequestBody CaseUpdateRequest req) {
+        String status = req.status == null ? "" : req.status.trim();
+        if (!List.of("new", "in_progress", "waiting_confirmation", "fixed", "closed").contains(status)) {
+            throw new ApiException(400, "任务状态不合法");
+        }
+        if ("closed".equals(status)
+                && (req.closed_reason == null || req.closed_reason.trim().isEmpty())) {
+            throw new ApiException(400, "关闭任务时必须填写关闭原因");
+        }
+        boolean updated = history.updateFollowUp(
+                reportId, status,
+                req.owner == null ? "" : req.owner.trim(),
+                req.note == null ? "" : req.note.trim(),
+                req.closed_reason == null ? "" : req.closed_reason.trim());
+        if (!updated) {
+            throw new ApiException(404, "报告不存在或已删除");
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("status", "ok");
+        out.put("report_id", reportId);
+        out.put("case_status", status);
+        return out;
+    }
+
+    @DeleteMapping("/api/history/{reportId}")
+    public Map<String, Object> deleteHistory(@PathVariable String reportId) {
+        boolean deleted = history.deleteHistory(reportId);
+        if (!deleted) {
+            throw new ApiException(404, "报告不存在或已删除");
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("status", "ok");
+        out.put("history_count", history.listHistory(9999).size());
+        return out;
+    }
+
+    @GetMapping("/api/history/{reportId}/export")
+    public ResponseEntity<byte[]> exportHistory(@PathVariable String reportId,
+                                                @RequestParam(defaultValue = "json") String format)
+            throws Exception {
+        Map<String, Object> report = history.getReport(reportId);
+        if (report == null) {
+            throw new ApiException(404, "报告不存在或已删除");
+        }
+        boolean markdown = "markdown".equalsIgnoreCase(format) || "md".equalsIgnoreCase(format);
+        byte[] body = (markdown ? toMarkdown(reportId, report)
+                : MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(report))
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        String filename = reportId + (markdown ? ".md" : ".json");
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(markdown
+                ? MediaType.parseMediaType("text/markdown; charset=UTF-8")
+                : MediaType.APPLICATION_JSON);
+        headers.setContentDispositionFormData("attachment", filename);
+        headers.setCacheControl("no-store");
+        return ResponseEntity.ok().headers(headers).body(body);
+    }
+
+    @PostMapping("/api/history/{reportId}/promote-unknown")
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> promoteUnknown(@PathVariable String reportId,
+                                              @RequestBody UnknownPromotionRequest req) {
+        Map<String, Object> report = history.getReport(reportId);
+        if (report == null) {
+            throw new ApiException(404, "报告不存在或已删除");
+        }
+        Object unknownObj = report.get("unknown_mode");
+        if (!(unknownObj instanceof Map)
+                || !Boolean.TRUE.equals(((Map<String, Object>) unknownObj).get("active"))) {
+            throw new ApiException(400, "只有未知场景模式生成的报告可以执行此操作");
+        }
+        if (req.root_cause == null || !knowledge.categoryLabels.containsKey(req.root_cause)) {
+            throw new ApiException(400, "最终根因归属不合法");
+        }
+        if (req.conclusion == null || req.conclusion.trim().isEmpty()) {
+            throw new ApiException(400, "最终根因说明不能为空");
+        }
+
+        int maxId = 0;
+        for (Scenario s : allScenarios()) {
+            try {
+                maxId = Math.max(maxId, Integer.parseInt(s.id.split("_")[1]));
+            } catch (Exception ignored) {
+            }
+        }
+        Scenario sc = new Scenario();
+        sc.id = String.format("SCN_%03d", maxId + 1);
+        sc.name = req.scenario_name == null || req.scenario_name.trim().isEmpty()
+                ? "未知现场问题归档 " + reportId
+                : req.scenario_name.trim();
+        String reportStatus = String.valueOf(report.getOrDefault("status_code", "pending"));
+        sc.http_codes = List.of(reportStatus);
+        sc.response_patterns = req.response_patterns == null
+                ? new ArrayList<>() : req.response_patterns;
+        sc.ui_symptoms = req.ui_symptoms == null
+                ? new ArrayList<>() : req.ui_symptoms;
+        sc.root_cause = req.root_cause;
+        sc.conclusion = req.conclusion.trim();
+        sc.evidence = req.evidence == null || req.evidence.isEmpty()
+                ? List.of("来自未知场景报告 " + reportId) : req.evidence;
+        sc.solution = req.solution == null || req.solution.isEmpty()
+                ? List.of("按最终根因修复，并使用该报告重新回归") : req.solution;
+        sc.probability = 1.0;
+        sc.priority = "高";
+        sc.custom = true;
+        history.addCustomScenario(sc);
+
+        Map<String, Object> ruleCandidate = new LinkedHashMap<>();
+        ruleCandidate.put("report_id", reportId);
+        ruleCandidate.put("scenario_id", sc.id);
+        ruleCandidate.put("root_cause", sc.root_cause);
+        ruleCandidate.put("conclusion", sc.conclusion);
+        ruleCandidate.put("status_code", reportStatus);
+        ruleCandidate.put("evidence", sc.evidence);
+        ruleCandidate.put("review_status", "pending");
+        ruleCandidate.put("created_at", now());
+        history.addRuleCandidate(ruleCandidate);
+
+        history.promoteCase(reportId, sc.id, sc.conclusion,
+                req.owner == null ? "" : req.owner.trim(),
+                "未知问题已解决，自动归档为场景 " + sc.id
+                        + "；通用规则候选等待人工审核");
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("status", "ok");
+        out.put("scenario", sc);
+        out.put("rule_candidate", ruleCandidate);
+        out.put("message", "已加入自定义场景库，并生成待审核的规则候选");
+        return out;
+    }
+
     /** 一键清空检测历史记录 */
     @DeleteMapping("/api/history")
     public Map<String, Object> clearHistory() {
@@ -299,5 +497,44 @@ public class ApiController {
         m.put("history_count", history.listHistory(9999).size());
         m.put("category_labels", knowledge.categoryLabels);
         return m;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static String toMarkdown(String reportId, Map<String, Object> report) {
+        Map<String, Object> conclusion =
+                (Map<String, Object>) report.getOrDefault("conclusion", Collections.emptyMap());
+        Map<String, Object> reportText =
+                (Map<String, Object>) report.getOrDefault("report", Collections.emptyMap());
+        StringBuilder md = new StringBuilder();
+        md.append("# FaultDetect 诊断报告\n\n");
+        md.append("- 报告号：").append(reportId).append('\n');
+        md.append("- 时间：").append(report.getOrDefault("timestamp", "—")).append('\n');
+        md.append("- URL：").append(report.getOrDefault("input_url", "—")).append('\n');
+        md.append("- 状态码：").append(report.getOrDefault("status_code", "—")).append('\n');
+        md.append("- 归属：").append(conclusion.getOrDefault("root_cause_label", "未确定")).append('\n');
+        Object confidence = conclusion.get("confidence");
+        if (confidence instanceof Number) {
+            md.append("- 置信度：").append(Math.round(((Number) confidence).doubleValue() * 100)).append("%\n");
+        }
+        md.append("\n## 现象\n\n").append(reportText.getOrDefault("phenomenon", "—")).append('\n');
+        md.append("\n## 排查过程\n\n").append(reportText.getOrDefault("checked", "—")).append('\n');
+        md.append("\n## 结论\n\n").append(reportText.getOrDefault("conclusion", "—")).append('\n');
+        Object hypotheses = report.get("hypotheses");
+        if (hypotheses instanceof List && !((List<?>) hypotheses).isEmpty()) {
+            md.append("\n## 候选假设\n\n");
+            for (Object item : (List<?>) hypotheses) {
+                if (item instanceof Map) {
+                    Map<String, Object> h = (Map<String, Object>) item;
+                    Object hc = h.get("confidence");
+                    int pct = hc instanceof Number
+                            ? (int) Math.round(((Number) hc).doubleValue() * 100) : 0;
+                    md.append("- **").append(h.getOrDefault("title", "未命名假设")).append("**（")
+                            .append(pct).append("%）：")
+                            .append(h.getOrDefault("description", "")).append('\n');
+                }
+            }
+        }
+        md.append("\n---\n\n本报告用于排障辅助，最终根因仍需结合现场日志、数据库与业务规则复核。\n");
+        return md.toString();
     }
 }

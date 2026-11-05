@@ -136,7 +136,7 @@ const chapters = [
                 head: '第 0 步 · 服务存活检测：后端服务到底通不通',
                 cmd: 'Test-NetConnection 主机IP -Port 端口',
                 lines: [
-                    '示例：<span class="mono">Test-NetConnection 192.168.1.100 -Port 8081</span>',
+                    '示例：<span class="mono">Test-NetConnection 192.0.2.10 -Port 8081</span>',
                     '看 <b>TcpTestSucceeded</b>：True=端口通（服务在听）；False=端口不通（服务没起 / 网络不通 / 防火墙拦截）。',
                     '<b>判断</b>：不通 → 先排查服务进程和端口，别急着查代码。',
                 ],
@@ -262,13 +262,13 @@ const chapters = [
                 cmd: 'Test-NetConnection 主机 -Port 端口',
                 lines: [
                     'ping 主机IP —— 测主机通不通（网络层）',
-                    'Test-NetConnection 192.168.1.100 -Port 8081 —— 测端口通不通（服务层）',
+                    'Test-NetConnection 192.0.2.10 -Port 8081 —— 测端口通不通（服务层）',
                     'netstat -ano | findstr 8081 —— 看本机端口被哪个进程占用',
                 ],
             },
             {
                 head: 'HTTP 请求',
-                cmd: 'curl.exe http://192.168.1.100:8081/api/users',
+                cmd: 'curl.exe http://192.0.2.10:8081/api/users',
                 lines: [
                     'curl.exe -X POST http://主机/api/login -H "Content-Type: application/json" -d "{\"user\":\"admin\"}"',
                     'curl.exe -k https://主机/api —— -k 忽略 SSL 证书错误（内网自签证书常用）',

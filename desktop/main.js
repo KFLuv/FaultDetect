@@ -1,0 +1,186 @@
+const { app, BrowserWindow, dialog, session, shell } = require('electron')
+const { spawn } = require('child_process')
+const fs = require('fs')
+const http = require('http')
+const path = require('path')
+
+const PORT = 8000
+const BASE_URL = `http://127.0.0.1:${PORT}`
+let mainWindow = null
+let backend = null
+let spawnedBackend = false
+
+function resourcePath(...parts) {
+  return path.join(process.resourcesPath, ...parts)
+}
+
+function jarPath() {
+  return app.isPackaged
+    ? resourcePath('backend', 'fault-detect-system.jar')
+    : path.join(__dirname, '..', 'java-backend', 'target', 'fault-detect-system.jar')
+}
+
+function javaPath() {
+  const bundled = app.isPackaged
+    ? resourcePath('jre', 'bin', 'javaw.exe')
+    : path.join(__dirname, 'build', 'jre', 'bin', 'javaw.exe')
+  return fs.existsSync(bundled) ? bundled : 'javaw'
+}
+
+function dataDir() {
+  const localAppData = process.env.LOCALAPPDATA || path.join(process.env.USERPROFILE || '.', 'AppData', 'Local')
+  return path.join(localAppData, 'FaultDetectSystem', 'data')
+}
+
+function backendArgs(jar) {
+  return [
+    '-jar',
+    jar,
+    `--server.port=${PORT}`,
+    '--server.address=127.0.0.1'
+  ]
+}
+
+function startBackend() {
+  const jar = jarPath()
+  const java = javaPath()
+  fs.mkdirSync(dataDir(), { recursive: true })
+  const env = {
+    ...process.env,
+    FAULT_DETECT_DATA_DIR: dataDir()
+  }
+  backend = spawn(java, backendArgs(jar), {
+    cwd: path.dirname(jar),
+    windowsHide: true,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    env
+  })
+  spawnedBackend = true
+  backend.stdout.on('data', data => process.stdout.write(`[backend] ${data}`))
+  backend.stderr.on('data', data => process.stderr.write(`[backend] ${data}`))
+  backend.on('error', error => {
+    backend = null
+    console.error('[backend] failed to start', error)
+  })
+  backend.on('exit', code => {
+    console.log('[backend] exited', code)
+    backend = null
+  })
+}
+
+function stopBackend() {
+  if (spawnedBackend && backend && !backend.killed) {
+    backend.kill()
+  }
+  backend = null
+  spawnedBackend = false
+}
+
+function ping() {
+  return new Promise(resolve => {
+    const req = http.get(`${BASE_URL}/api/health`, response => {
+      let body = ''
+      response.setEncoding('utf8')
+      response.on('data', chunk => { body += chunk })
+      response.on('end', () => {
+        try {
+          const data = JSON.parse(body)
+          resolve(response.statusCode === 200 && data.status === 'ok')
+        } catch {
+          resolve(false)
+        }
+      })
+    })
+    req.on('error', () => resolve(false))
+    req.setTimeout(1500, () => {
+      req.destroy()
+      resolve(false)
+    })
+  })
+}
+
+async function waitForBackend(timeoutMs = 120000) {
+  const start = Date.now()
+  while (Date.now() - start < timeoutMs) {
+    if (await ping()) return true
+    await new Promise(resolve => setTimeout(resolve, 700))
+  }
+  return false
+}
+
+function createWindow() {
+  mainWindow = new BrowserWindow({
+    width: 1440,
+    height: 920,
+    minWidth: 1080,
+    minHeight: 720,
+    title: 'FaultDetect',
+    backgroundColor: '#f3f4f6',
+    autoHideMenuBar: true,
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true
+    }
+  })
+
+  mainWindow.once('ready-to-show', () => mainWindow.show())
+  mainWindow.loadURL(BASE_URL)
+  mainWindow.on('closed', () => { mainWindow = null })
+}
+
+const hasLock = app.requestSingleInstanceLock()
+if (!hasLock) {
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.focus()
+    }
+  })
+
+  app.whenReady().then(async () => {
+    session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
+      callback(permission === 'geolocation')
+    })
+
+    app.on('web-contents-created', (_event, contents) => {
+      contents.setWindowOpenHandler(({ url }) => {
+        if (url.startsWith(BASE_URL)) return { action: 'allow' }
+        if (/^https?:\/\//i.test(url)) shell.openExternal(url)
+        return { action: 'deny' }
+      })
+      contents.on('will-navigate', (event, url) => {
+        if (!url.startsWith(BASE_URL)) {
+          event.preventDefault()
+          if (/^https?:\/\//i.test(url)) shell.openExternal(url)
+        }
+      })
+    })
+
+    if (!(await ping())) startBackend()
+    const ready = await waitForBackend()
+    if (!ready) {
+      dialog.showErrorBox(
+        'FaultDetect 启动失败',
+        '本地服务未能在 2 分钟内启动。请检查 8000 端口、内置 JRE 和运行数据目录。'
+      )
+      app.quit()
+      return
+    }
+    createWindow()
+  })
+
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+  })
+
+  app.on('window-all-closed', () => {
+    stopBackend()
+    app.quit()
+  })
+  app.on('before-quit', stopBackend)
+}

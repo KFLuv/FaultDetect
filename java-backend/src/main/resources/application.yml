@@ -1,9 +1,12 @@
 server:
+  address: 127.0.0.1
   port: 8000
 
 spring:
   application:
     name: fault-detect-system
+  config:
+    import: optional:file:${user.home}/.faultdetect/application.properties
   jackson:
     default-property-inclusion: always
   web:
@@ -18,6 +21,11 @@ spring:
 # 需要启用时，把 enabled 置为 true 并填好 endpoint / model / api-key（推荐用环境变量注入密钥）。
 # 全部项均可用环境变量覆盖，例如 FAULTDETECT_LLM_ENABLED=true、FAULTDETECT_LLM_API_KEY=sk-xxx
 faultdetect:
+  security:
+    # 当前产品定位为本机单用户排障工具。API 同时校验回环地址。
+    local-only: true
+  retention:
+    days: ${FAULT_DETECT_RETENTION_DAYS:180}
   llm:
     enabled: ${FAULTDETECT_LLM_ENABLED:false}
     endpoint: ${FAULTDETECT_LLM_ENDPOINT:}

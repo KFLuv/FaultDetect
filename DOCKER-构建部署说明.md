@@ -33,24 +33,24 @@
 $env:JAVA_HOME = 'E:\JDK11'
 
 # ① 如果改了前端（frontend-vue3/src）→ 先构建前端，再把 dist 拷进后端静态目录
-Set-Location 'E:\Desktop\FaultDetect\fault-detect-system-main\frontend-vue3'
+Set-Location '<项目目录>\frontend-vue3'
 npm run build
 # 把 dist 内容拷到 java-backend/src/main/resources/static（前端进 jar 的方式）
 Copy-Item 'dist\*' '..\java-backend\src\main\resources\static\' -Recurse -Force
 
 # ② 打包 jar
-Set-Location 'E:\Desktop\FaultDetect\fault-detect-system-main\java-backend'
+Set-Location '<项目目录>\java-backend'
 D:\Tools\apache-maven-3.9.16\bin\mvn.cmd -B clean package -DskipTests
 # 产物：target\fault-detect-system.jar（约 30 MB）
 
 # ③ 构建镜像（在项目根目录）
-Set-Location 'E:\Desktop\FaultDetect\fault-detect-system-main'
+Set-Location '<项目目录>'
 docker build -f java-backend/Dockerfile.simple -t fault-detect-system-java:latest java-backend
 
 # ④ 重建容器
 docker rm -f fault-detect-system-java
 docker run -d --name fault-detect-system-java -p 8000:8000 `
-  -v "E:\Desktop\FaultDetect\fault-detect-system-main\data:/app/data" `
+  -v "<项目目录>\data:/app/data" `
   --restart unless-stopped fault-detect-system-java:latest
 ```
 
@@ -79,6 +79,6 @@ docker logs fault-detect-system-java | Select-String 'Started FaultDetectApplica
 `application.yml` 的 `faultdetect.llm` 默认关闭（不配置就不会发起任何外部请求）。要启用就加环境变量：
 
 ```powershell
--e FAULTDETECT_LLM_ENABLED=true -e FAULTDETECT_LLM_ENDPOINT=http://192.0.2.10:8000/v1 `
+-e FAULTDETECT_LLM_ENABLED=true -e FAULTDETECT_LLM_ENDPOINT=http://127.0.0.1:8000/v1 `
 -e FAULTDETECT_LLM_MODEL=Qwen3.5-35B-A3B -e FAULTDETECT_LLM_API_KEY=<key>
 ```

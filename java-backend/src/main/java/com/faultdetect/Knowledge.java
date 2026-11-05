@@ -10,7 +10,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 知识库（92 场景 + 32 状态码 + 分类标签/配色）
+ * 知识库（132 场景 + 59 状态码 + 分类标签/配色）
  * 数据来源：src/main/resources/knowledge/*.json（由 Python 版导出，保证一致）
  */
 @Component

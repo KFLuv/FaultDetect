@@ -1,7 +1,7 @@
 # 🔍 故障检测系统 · 使用指南（Java 版）
 
 > 版本：v2.0（Java + Vue3 前端）｜ 适用对象：现场实施 / 交付 / 运维人员
-> 系统位置：本地任意目录（如 `D:ault-detect-system`）
+> 系统位置：`<项目目录>`
 > 后端技术：Spring Boot 2.7 + Java 11 + SQLite；前端技术：Vue 3 + Vite 5（与原 Python 版功能 1:1 对齐，接口/知识库/打分规则一致）
 
 ---
@@ -30,7 +30,7 @@
 
 **智能故障检测与诊断系统**——为现场实施/交付人员设计的一键排障工具。只需粘贴一个故障页面 URL，系统自动完成 7 步检测流程，锁定问题根因，并输出可直接汇报的 3 段式诊断报告。
 
-> Java 版为原 Python 版的完整移植：8 个接口、7 步检测引擎、93 场景 × 32 状态码知识库、打分规则均已逐项对比验证一致，功能无缺漏。
+> Java 版提供 8 个接口、7 步检测引擎、132 场景 × 59 状态码知识库；核心检测、差分隔离和规则归因在 Java 版中独立维护。
 
 ### 1.2 核心能力
 
@@ -47,7 +47,7 @@
 
 ### 1.3 适用场景
 
-- ✅ 央国企驻场实施（如能源类驻场项目）
+- ✅ 央国企驻场实施（如企业驻场交付项目）
 - ✅ 现场故障快速响应
 - ✅ 问题定位与向研发/甲方汇报
 - ✅ 实施团队培训演练
@@ -113,8 +113,8 @@ java -jar java-backend\target\fault-detect-system.jar
 | 场景 | 访问地址 |
 |------|---------|
 | 本机访问 | http://localhost:8000 或 http://127.0.0.1:8000 |
-| 局域网访问（同一 WiFi 的手机/其他电脑） | http://本机IP:8000（如 http://192.168.1.10:8000） |
-| 获取本机 IP | PowerShell 执行 `ipconfig`，看"IPv4 地址"（如 192.168.x.x） |
+| 局域网访问（同一 WiFi 的手机/其他电脑） | http://本机IP:8000（如 http://192.0.2.20:8000） |
+| 获取本机 IP | PowerShell 执行 `ipconfig`，看"IPv4 地址"（如 192.0.2.x） |
 
 > 💡 **停止服务**：Docker 方式执行 `docker compose -f docker-compose-java.yml down`；jar/脚本方式直接关闭启动窗口。
 
@@ -153,11 +153,11 @@ java -jar java-backend\target\fault-detect-system.jar
 
 | 输入形式 | 示例 | 说明 |
 |---------|------|------|
-| 完整 URL | `http://192.168.1.100:8081/api/users` | 标准写法，推荐 |
-| 不带协议 | `192.168.1.100:8081/api/users` | 自动补 `http://` |
+| 完整 URL | `http://192.0.2.10:8081/api/users` | 标准写法，推荐 |
+| 不带协议 | `192.0.2.10:8081/api/users` | 自动补 `http://` |
 | 域名 | `http://oa.example.local/report` | 需本机 DNS 可解析 |
-| HTTPS | `https://192.168.1.100:8443/api` | 自动忽略证书校验（自签名可测） |
-| 带查询参数 | `http://192.168.1.100:8081/api/list?dept=01` | 参数会保留用于探测 |
+| HTTPS | `https://192.0.2.10:8443/api` | 自动忽略证书校验（自签名可测） |
+| 带查询参数 | `http://192.0.2.10:8081/api/list?dept=01` | 参数会保留用于探测 |
 
 **关键提醒**：务必填**浏览器地址栏或 F12 Network 中实际出错的请求地址**（红色那条），而不是首页地址。填错地址会测错目标。
 
@@ -264,7 +264,7 @@ java -jar java-backend\target\fault-detect-system.jar
 **场景 A：页面空表格**
 
 ```
-URL：   http://192.168.1.100:8081/api/users
+URL：   http://192.0.2.10:8081/api/users
 症状：  页面显示空表格，没有任何数据
 ```
 
@@ -273,7 +273,7 @@ URL：   http://192.168.1.100:8081/api/users
 **场景 B：登录被拒**
 
 ```
-URL：   http://192.168.1.100:8081/api/login
+URL：   http://192.0.2.10:8081/api/login
 症状：  操作被拒绝，提示未登录
 ```
 
@@ -282,7 +282,7 @@ URL：   http://192.168.1.100:8081/api/login
 **场景 C：接口报 500**
 
 ```
-URL：   http://192.168.1.100:8081/api/user/delete
+URL：   http://192.0.2.10:8081/api/user/delete
 症状：  点击删除报服务器内部错误
 ```
 
@@ -352,9 +352,9 @@ URL：   http://192.168.1.100:8081/api/user/delete
 ### 5.6 汇报模板（3 段式）
 
 ```
-【现象】用户访问 http://192.168.1.100:8081/api/users，页面表现：页面显示空表格（状态码 200，耗时 45ms）
+【现象】用户访问 http://192.0.2.10:8081/api/users，页面表现：页面显示空表格（状态码 200，耗时 45ms）
 【排查过程】
-- URL 解析（解析输入 URL）→ http://192.168.1.100:8081/api/users
+- URL 解析（解析输入 URL）→ http://192.0.2.10:8081/api/users
 - 服务存活检测（TCP）（Test-NetConnection ...）→ TcpTestSucceeded: True
 - HTTP 请求探测（GET ...）→ 状态码：200 | 耗时：45ms
 - ...
@@ -609,7 +609,7 @@ java -jar java-backend\target\fault-detect-system.jar --server.port=8088
 - **原因**：检测是"裸请求"，不带你浏览器里的登录凭证（Cookie/Token）。接口需要登录时，裸请求必然 401——这是**正确的**，说明接口有认证保护
 - **浏览器能 200**：因为浏览器已登录，请求自动携带了凭证
 - **解决**：按 4.2.1 在检测表单展开"登录凭证"，粘贴 Cookie / Token 后再检测，即可得到真实结果
-- **补充**：检测目标填 `localhost` 且系统跑在 Docker 里时，结果会是 502（容器内 localhost 不是你的电脑），改用本机 IP（如 `http://192.168.1.10:端口/路径`）
+- **补充**：检测目标填 `localhost` 且系统跑在 Docker 里时，结果会是 502（容器内 localhost 不是你的电脑），改用本机 IP（如 `http://192.0.2.20:端口/路径`）
 
 ---
 
@@ -633,7 +633,7 @@ fault-detect-system/
 │   ├── target/
 │   │   └── fault-detect-system.jar  # 打包产物（重新部署时使用）
 │   └── src/main/
-│       ├── java/com.faultdetect/  # 后端源码（8 个类）
+│       ├── java/com/faultdetect/  # 后端源码（8 个类）
 │       └── resources/                 # 配置 + 知识库 JSON + 前端构建产物
 ├── frontend-vue3/              # 前端工程（Vue 3 + Vite 5，改前端改这里）
 │   ├── src/
@@ -721,7 +721,7 @@ java -jar java-backend\target\fault-detect-system.jar
 
 ```powershell
 # 执行检测
-$body = '{"url":"http://192.168.1.100:8081/api/users","symptom":"页面显示空表格","enable_service_check":true,"timeout":10}'
+$body = '{"url":"http://192.0.2.10:8081/api/users","symptom":"页面显示空表格","enable_service_check":true,"timeout":10}'
 Invoke-RestMethod http://localhost:8000/api/detect -Method Post -ContentType "application/json" -Body $body
 
 # 新增场景

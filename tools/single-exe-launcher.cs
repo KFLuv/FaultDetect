@@ -32,7 +32,7 @@ namespace FaultDetectSingleExe
         /// <summary>内嵌资源名（= 打包时 /resource 指定的逻辑名）</summary>
         const string PayloadResource = "payload.zip";
         /// <summary>payload 版本号：改动内嵌内容时必须同步修改，以触发目标机重新解压</summary>
-        const string PayloadVersion = "20260924-1";
+        const string PayloadVersion = "20261106-6";
 
         const string SiteUrl = "http://localhost:8000";
         const int Port = 8000;
@@ -40,7 +40,7 @@ namespace FaultDetectSingleExe
 
         static string WorkRoot;   // 解压根目录（含 app\ 与 runtime\）
         static string JarPath;    // app\fault-detect-system.jar
-        static string JavaExe;    // runtime\bin\java.exe
+        static string JavaExe;    // runtime\bin\javaw.exe
         static string DataDir;    // 业务数据目录
 
         static NotifyIcon tray;
@@ -116,7 +116,7 @@ namespace FaultDetectSingleExe
                     "FaultDetectSystem");
             WorkRoot = Path.Combine(baseDir, "payload-" + PayloadVersion);
             JarPath = Path.Combine(WorkRoot, "app", "fault-detect-system.jar");
-            JavaExe = Path.Combine(WorkRoot, "runtime", "bin", "java.exe");
+            JavaExe = Path.Combine(WorkRoot, "runtime", "bin", "javaw.exe");
             DataDir = Path.Combine(baseDir, "data");
         }
 

@@ -1,0 +1,117 @@
+name: Build and Regression
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '11'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            frontend-vue3/package-lock.json
+            desktop/package-lock.json
+
+      - name: Build frontend
+        working-directory: frontend-vue3
+        shell: pwsh
+        run: |
+          npm ci
+          npm run build
+
+      - name: Copy frontend into backend
+        shell: pwsh
+        run: |
+          $src = "frontend-vue3/dist"
+          $dst = "java-backend/src/main/resources/static"
+          Copy-Item -LiteralPath "$src/index.html" -Destination "$dst/index.html" -Force
+          Copy-Item -Path "$src/assets/*" -Destination "$dst/assets" -Force
+
+      - name: Build backend
+        working-directory: java-backend
+        shell: pwsh
+        run: mvn -B clean package -DskipTests
+
+      - name: Build Electron desktop portable
+        working-directory: desktop
+        shell: pwsh
+        run: |
+          npm ci
+          npm run jre
+          npx electron-builder --win portable --publish never
+
+      - name: Upload desktop portable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: faultdetect-desktop-portable
+          path: desktop/release_app/FaultDetect-*-portable.exe
+
+      - name: Start backend
+        shell: pwsh
+        run: |
+          $env:FAULT_DETECT_DATA_DIR = "$env:RUNNER_TEMP\faultdetect-data"
+          $jar = "java-backend/target/fault-detect-system.jar"
+          $p = Start-Process java -ArgumentList "-jar", $jar -WorkingDirectory "java-backend" -WindowStyle Hidden -PassThru
+          $p.Id | Set-Content -LiteralPath "$env:RUNNER_TEMP\faultdetect.pid"
+          for ($i = 0; $i -lt 60; $i++) {
+            try {
+              $health = Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/health"
+              if ($health.status -eq "ok") { exit 0 }
+            } catch {
+            }
+            Start-Sleep -Seconds 1
+          }
+          throw "FaultDetect backend did not become healthy"
+
+      - name: Run regression
+        shell: pwsh
+        run: ./scripts/run-faultdetect-regression.ps1 -BaseUrl http://127.0.0.1:8000 -Label ci
+
+      - name: Run browser UI smoke test
+        working-directory: frontend-vue3
+        shell: pwsh
+        run: npm run test:ui
+
+      - name: Upload regression report
+        uses: actions/upload-artifact@v4
+        with:
+          name: faultdetect-regression
+          path: |
+            docs/testing/FaultDetect-Regression-ci.json
+            docs/testing/FaultDetect-Regression-ci.md
+            docs/testing/FaultDetect-UI-Smoke-20261106.json
+            docs/testing/FaultDetect-UI-Smoke-Desktop.png
+            docs/testing/FaultDetect-UI-Smoke-Mobile.png
+
+      - name: Stop backend before migration test
+        shell: pwsh
+        run: |
+          $pidFile = "$env:RUNNER_TEMP\faultdetect.pid"
+          if (Test-Path -LiteralPath $pidFile) {
+            $backendPid = [int](Get-Content -LiteralPath $pidFile)
+            Stop-Process -Id $backendPid -Force -ErrorAction SilentlyContinue
+          }
+
+      - name: Run old database migration test
+        shell: pwsh
+        run: ./scripts/test-data-migration.ps1 -BaseUrl http://127.0.0.1:8000
+
+      - name: Upload migration report
+        uses: actions/upload-artifact@v4
+        with:
+          name: faultdetect-migration
+          path: docs/testing/FaultDetect-Migration-20261106.json

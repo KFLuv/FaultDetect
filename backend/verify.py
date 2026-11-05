@@ -82,8 +82,8 @@ for code, feats, sym, expect in cases:
 print("=" * 60)
 print("6. 诊断报告构建验证（模拟探测结果）")
 mock_detect = {
-    "parsed": {"scheme": "http", "host": "192.168.1.100", "port": 8081,
-               "path": "/api/users", "url": "http://192.168.1.100:8081/api/users"},
+    "parsed": {"scheme": "http", "host": "192.0.2.10", "port": 8081,
+               "path": "/api/users", "url": "http://192.0.2.10:8081/api/users"},
     "service": {"ok": True, "detail": "TcpTestSucceeded: True（耗时 12ms）"},
     "probe": {"status_code": 200, "status_text": "200",
               "response_time_ms": 45, "headers": {}, "body_length": 20,
@@ -107,8 +107,8 @@ if "error" not in report:
 
 print("=" * 60)
 print("7. URL 解析与状态规整")
-check("标准 URL", parse_url("http://192.168.1.100:8081/api/users")["host"] == "192.168.1.100")
-check("无协议 URL 自动补 http", parse_url("192.168.1.100:8081/a")["scheme"] == "http")
+check("标准 URL", parse_url("http://192.0.2.10:8081/api/users")["host"] == "192.0.2.10")
+check("无协议 URL 自动补 http", parse_url("192.0.2.10:8081/a")["scheme"] == "http")
 check("空 URL 报错", "error" in parse_url("   "))
 check("无主机名 http:// 报错", "error" in parse_url("http://"))
 check("无主机名 http://?a=1 报错", "error" in parse_url("http://?a=1"))

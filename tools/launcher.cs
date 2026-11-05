@@ -170,7 +170,7 @@ namespace FaultDetectLauncher
             // 【绿色版】优先使用随包携带的 JRE，目标机器无需安装 Java
             if (UsingBundled)
             {
-                string bundledJava = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "runtime", "bin", "java.exe");
+                string bundledJava = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "runtime", "bin", "javaw.exe");
                 if (File.Exists(bundledJava)) return bundledJava;
             }
 
@@ -213,6 +213,38 @@ namespace FaultDetectLauncher
 
         static void OpenBrowser()
         {
+            // 优先用 Edge/Chrome 的「应用模式」打开：独立窗口、没有地址栏和标签页，
+            // 看起来就是一个桌面程序（不再跳到浏览器标签页）。
+            string profile = Path.Combine(Path.GetTempPath(), "FaultDetectAppWindow");
+            string[] candidates = new string[]
+            {
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
+                    @"Microsoft\Edge\Application\msedge.exe"),
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+                    @"Microsoft\Edge\Application\msedge.exe"),
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+                    @"Google\Chrome\Application\chrome.exe"),
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
+                    @"Google\Chrome\Application\chrome.exe")
+            };
+            foreach (string exe in candidates)
+            {
+                if (!File.Exists(exe)) continue;
+                try
+                {
+                    ProcessStartInfo psi = new ProcessStartInfo(exe);
+                    psi.UseShellExecute = false;
+                    psi.Arguments = "--app=\"" + SiteUrl + "\" --window-size=1360,900"
+                        + " --user-data-dir=\"" + profile + "\" --no-first-run";
+                    Process.Start(psi);
+                    return;
+                }
+                catch
+                {
+                    // 换下一个浏览器
+                }
+            }
+            // 都没装：退回默认浏览器（保底还能用）
             try
             {
                 Process.Start(new ProcessStartInfo(SiteUrl) { UseShellExecute = true });

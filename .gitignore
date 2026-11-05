@@ -1,14 +1,36 @@
-target/
-*.jar
-*.class
-*.log
-node_modules/
-dist/
+# ===== 运行数据（本地数据库、自定义场景，含敏感业务数据，不入库）=====
+data/
+*.testdata/
+*.testdata*
+
+# ===== Python 原版虚拟环境（约 300MB 第三方依赖）=====
 .venv/
 __pycache__/
-data/*.db
-data/*.json
-!data/.gitkeep
-.testdata/
+*.pyc
+
+# ===== Java / Maven 构建产物（Docker 多阶段构建自动生成，无需入库）=====
+java-backend/target/
+*.class
+
+# ===== Node 依赖与前端构建产物（源码在 frontend-vue3/src，dist 可随时重新构建）=====
+node_modules/
+frontend-vue3/dist/
+frontend-vue3/node_modules/
+
+# ===== 分发包与可执行产物（体积大，可由 tools/ 下源码 + jlink 重新生成，不入库）=====
+# 单文件版（内嵌 jar + 精简 JRE，约 64 MB）
+/故障检测系统.exe
+/故障检测系统-一键启动.exe
+/故障检测系统-一键启动.exe.bak
+/tools/*.exe
+# 绿色版目录（jar + runtime + 启动器，约 82 MB）
+/dist/
+# 供源码布局启动器向上查找的 jar 副本
+/fault-detect-system.jar
+
+# ===== IDE 与系统杂项 =====
 .idea/
 .vscode/
+*.iml
+.DS_Store
+Thumbs.db

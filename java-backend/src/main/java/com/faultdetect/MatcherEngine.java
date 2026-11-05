@@ -22,11 +22,18 @@ public class MatcherEngine {
     private final HypothesisEngine hypothesisEngine;
     /** 【P3】可选 LLM 增强层：默认关闭，仅在调用方显式要求（enable_llm=true）且后端已配置时才联网 */
     private final LlmAdvisor llmAdvisor;
+    /** 知识库低置信时进入未知场景模式，不强行套用候选场景 */
+    private final UnknownCaseService unknownCaseService;
+    private final HistoryRepository history;
 
-    public MatcherEngine(Knowledge knowledge, HypothesisEngine hypothesisEngine, LlmAdvisor llmAdvisor) {
+    public MatcherEngine(Knowledge knowledge, HypothesisEngine hypothesisEngine,
+                         LlmAdvisor llmAdvisor, UnknownCaseService unknownCaseService,
+                         HistoryRepository history) {
         this.knowledge = knowledge;
         this.hypothesisEngine = hypothesisEngine;
         this.llmAdvisor = llmAdvisor;
+        this.unknownCaseService = unknownCaseService;
+        this.history = history;
     }
 
     public static class MatchResult {
@@ -116,7 +123,9 @@ public class MatcherEngine {
     /** 匹配最佳场景，返回 topN 备选（仅内置场景，与 Python 版一致） */
     public List<MatchResult> matchScenario(String normalizedStatus, List<String> features, String symptomsText, int topN) {
         List<MatchResult> results = new ArrayList<>();
-        for (Scenario sc : knowledge.scenarios) {
+        List<Scenario> allScenarios = new ArrayList<>(knowledge.scenarios);
+        allScenarios.addAll(history.getCustomScenarios());
+        for (Scenario sc : allScenarios) {
             ScoreResult sr = scoreScenario(sc, normalizedStatus, features, symptomsText);
             if (sr.score > 0) {
                 results.add(new MatchResult(sc, sr.score, sr.reasons));
@@ -127,7 +136,7 @@ public class MatcherEngine {
 
         if (top.isEmpty()) {
             // 兜底：按状态码找第一个场景
-            for (Scenario sc : knowledge.scenarios) {
+            for (Scenario sc : allScenarios) {
                 if (sc.http_codes != null && sc.http_codes.contains(normalizedStatus)) {
                     top = new ArrayList<>();
                     top.add(new MatchResult(sc, 30, Collections.singletonList("状态码兜底匹配")));
@@ -188,6 +197,8 @@ public class MatcherEngine {
         // 必须在证据链/结论/3 段式汇报之前完成，其步骤与结论才能一并进入报告。
         HypothesisEngine.InferenceResult inference = hypothesisEngine.infer(
                 dr, best != null ? best.scenario : null, bestConfidence);
+        Map<String, Object> unknownMode = unknownCaseService.build(
+                dr, symText, best != null ? best.scenario : null, bestConfidence, inference);
         if (!inference.hypotheses.isEmpty()) {
             dr.steps.add(DetectEngine.step(7, "通用假设推理（多假设排序）",
                     "把观测事实喂给通用技术规则库（不依赖状态码查表），产出带置信度 / 反证条件 / 验证动作的假设列表",
@@ -446,6 +457,7 @@ public class MatcherEngine {
         out.put("hypotheses", conclusion.get("hypotheses"));
         // 【P3】LLM 增强分析结果（与 conclusion.llm_advice 同源）：追加字段
         out.put("llm", adviceMap);
+        out.put("unknown_mode", unknownMode);
         return out;
     }
 

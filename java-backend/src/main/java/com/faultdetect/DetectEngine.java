@@ -113,7 +113,7 @@ public class DetectEngine {
             String host = uri.getHost();
             String scheme = uri.getScheme() == null ? "http" : uri.getScheme();
             if (host == null || host.isEmpty()) {
-                throw new ApiException(400, "URL 格式不正确：缺少主机名（示例：http://192.168.1.100:8081）");
+                throw new ApiException(400, "URL 格式不正确：缺少主机名（示例：http://192.0.2.10:8081）");
             }
             int port = uri.getPort();
             if (port == -1) {

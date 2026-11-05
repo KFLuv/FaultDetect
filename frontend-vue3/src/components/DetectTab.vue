@@ -6,7 +6,7 @@
             <div class="form-row">
                 <div class="form-group grow">
                     <label>故障 URL（必填）</label>
-                    <input type="text" v-model="form.url" placeholder="例如：http://192.168.1.100:8081/api/users">
+                    <input type="text" v-model="form.url" placeholder="例如：http://192.0.2.10:8081/api/users">
                 </div>
             </div>
             <div class="form-row">
@@ -16,6 +16,10 @@
                 </div>
                 <div class="form-group">
                     <label>检测选项</label>
+                    <label class="checkbox auth-confirm">
+                        <input type="checkbox" v-model="form.authorizedTarget">
+                        我确认已获得目标系统的诊断授权
+                    </label>
                     <label class="checkbox"><input type="checkbox" v-model="form.serviceCheck"> 服务存活检测（TCP）</label>
                     <label class="checkbox"><input type="checkbox" v-model="form.contrastCheck"> 🔬 差分隔离实验（对照推导）</label>
                     <p class="hint" style="margin:4px 0 0;font-size:12px;">
@@ -87,8 +91,19 @@
         </div>
 
         <!-- ============ 检测结果 ============ -->
-        <div v-if="report && !loading" class="result-section">
+        <div
+            v-if="report && !loading"
+            class="result-section"
+            :data-report-id="report.report_id"
+            :data-unknown-active="report.unknown_mode?.active ? 'true' : 'false'"
+        >
             <div class="status-banner" v-html="bannerHtml"></div>
+
+            <UnknownCasePanel
+                v-if="report.unknown_mode && report.unknown_mode.active"
+                :report="report"
+                @promoted="$emit('changed')"
+            />
 
             <div class="card">
                 <h2>⏱️ 检测流程（{{ stepRangeText }}）</h2>
@@ -149,6 +164,8 @@
                 <div class="report-template" ref="reportEl">{{ reportText }}</div>
                 <div class="btn-row">
                     <button class="btn btn-primary" @click="copyReport">📋 复制汇报文本</button>
+                    <button class="btn btn-ghost" @click="downloadReport('json')">下载 JSON</button>
+                    <button class="btn btn-ghost" @click="downloadReport('markdown')">下载 Markdown</button>
                 </div>
             </div>
 
@@ -186,16 +203,27 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, watch } from 'vue'
 import { api, esc, catColor, catLabel } from '../api'
 import { pickStatusTeach, pickCategoryTeach } from '../teaching-data'
 import TeachingTab from './TeachingTab.vue'
+import UnknownCasePanel from './UnknownCasePanel.vue'
 
 const emit = defineEmits(['changed'])
-const form = reactive({ url: '', symptom: '', serviceCheck: true, contrastCheck: true, llmCheck: false, timeout: '10', cookieVal: '', tokenVal: '', authScheme: '', authSchemeCustom: '', headersOpen: false })
+const props = defineProps({
+    preset: { type: Object, default: null }
+})
+const form = reactive({ url: '', symptom: '', authorizedTarget: false, serviceCheck: true, contrastCheck: true, llmCheck: false, timeout: '10', cookieVal: '', tokenVal: '', authScheme: '', authSchemeCustom: '', headersOpen: false })
 const loading = ref(false)
 const report = ref(null)
 const reportEl = ref(null)
+
+watch(() => props.preset, (value) => {
+    if (!value) return
+    form.url = value.url || ''
+    form.symptom = value.symptom || ''
+    report.value = null
+}, { deep: true })
 
 // ---------- Authorization 前缀拼接 ----------
 // 按所选前缀拼出 Authorization 的值；若粘贴的内容已是「同名前缀 + 值」，则不重复拼接
@@ -219,6 +247,7 @@ const authPreview = computed(() => {
 function detect() {
     const url = form.url.trim()
     if (!url) { alert('请输入故障 URL'); return }
+    if (!form.authorizedTarget) { alert('请先确认已获得目标系统的诊断授权'); return }
     // 登录凭证（Cookie / Token）：Authorization 按上面所选前缀拼接，不再自动补 Bearer
     const cookie = form.cookieVal.trim()
     let headers = null
@@ -239,6 +268,7 @@ function detect() {
             enable_contrast: form.contrastCheck,
             // 【P3】可选 LLM 增强层：默认 false，不勾选时后端不会发起任何外部请求
             enable_llm: form.llmCheck,
+            authorized_target: form.authorizedTarget,
             timeout: parseInt(form.timeout, 10),
             headers: headers,
         }),
@@ -490,16 +520,24 @@ async function copyReport() {
     }
 }
 
+function downloadReport(format) {
+    const id = report.value?.report_id
+    if (!id) { alert('暂无可下载报告'); return }
+    window.open(`/api/history/${encodeURIComponent(id)}/export?format=${format}`, '_blank')
+}
+
 // ---------- 示例 / 清空 ----------
 function loadDemo() {
-    form.url = 'http://192.168.1.100:8081/api/users'
+    form.url = 'http://192.0.2.10:8081/api/users'
     form.symptom = '页面显示空表格，没有任何数据'
+    form.authorizedTarget = false
     form.serviceCheck = true
 }
 
 function clear() {
     form.url = ''
     form.symptom = ''
+    form.authorizedTarget = false
     form.cookieVal = ''
     form.tokenVal = ''
     form.authScheme = ''
@@ -511,6 +549,14 @@ function clear() {
 </script>
 
 <style scoped>
+.auth-confirm {
+    margin-bottom: 2px;
+    padding: 8px 10px;
+    border: 1px solid color-mix(in srgb, var(--warning) 28%, var(--border));
+    border-radius: 7px;
+    background: color-mix(in srgb, var(--warning) 6%, transparent);
+}
+
 /* 动态教学卡 */
 .teach-dyn-card .hint { font-size: 13px; color: var(--text-dim); margin-bottom: 12px; }
 .teach-dyn {

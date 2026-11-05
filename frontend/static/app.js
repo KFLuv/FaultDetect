@@ -257,7 +257,7 @@ async function copyReport() {
 }
 
 function loadDemo() {
-    $("inputUrl").value = "http://192.168.1.100:8081/api/users";
+    $("inputUrl").value = "http://192.0.2.10:8081/api/users";
     $("inputSymptom").value = "页面显示空表格，没有任何数据";
     $("optService").checked = true;
 }

@@ -1,0 +1,248 @@
+{
+  "generated_at": "2026-11-06 02:47:09",
+  "base_url": "http://127.0.0.1:8000",
+  "health": {
+    "status": "ok",
+    "version": "1.3.0",
+    "security_mode": "local-only",
+    "total_scenarios": 132,
+    "total_status_codes": 59
+  },
+  "observation": {
+    "total": 8,
+    "passed": 7,
+    "consistency": 87.5,
+    "known_boundaries": [
+      "SC_08: DNS_FAIL vs CONN_REFUSED"
+    ],
+    "cases": [
+      {
+        "id": "SC_01",
+        "name": "本地服务 200（UTF-8 中文响应）",
+        "url": "http://127.0.0.1:53618/ok",
+        "expect": "200",
+        "truth": "200",
+        "actual": "200",
+        "match": true,
+        "truth_ms": 12,
+        "actual_ms": 89,
+        "body_ok": null,
+        "body_note": "",
+        "note": ""
+      },
+      {
+        "id": "SC_02",
+        "name": "本地服务 404",
+        "url": "http://127.0.0.1:53618/notfound",
+        "expect": "404",
+        "truth": "404",
+        "actual": "404",
+        "match": true,
+        "truth_ms": 2,
+        "actual_ms": 5,
+        "body_ok": null,
+        "body_note": "",
+        "note": ""
+      },
+      {
+        "id": "SC_03",
+        "name": "本地服务 500（响应含异常类名）",
+        "url": "http://127.0.0.1:53618/servererror",
+        "expect": "500",
+        "truth": "500",
+        "actual": "500",
+        "match": true,
+        "truth_ms": 2,
+        "actual_ms": 4,
+        "body_ok": null,
+        "body_note": "",
+        "note": ""
+      },
+      {
+        "id": "SC_04",
+        "name": "GBK 响应（Content-Type 声明 charset=GBK）",
+        "url": "http://127.0.0.1:53618/gbk",
+        "expect": "200",
+        "truth": "200",
+        "actual": "200",
+        "match": true,
+        "truth_ms": 2,
+        "actual_ms": 3,
+        "body_ok": true,
+        "body_note": "",
+        "note": ""
+      },
+      {
+        "id": "SC_05",
+        "name": "GBK 响应（响应头未声明 charset，需回退探测）",
+        "url": "http://127.0.0.1:53618/gbk-nohdr",
+        "expect": "200",
+        "truth": "200",
+        "actual": "200",
+        "match": true,
+        "truth_ms": 3,
+        "actual_ms": 6,
+        "body_ok": true,
+        "body_note": "",
+        "note": ""
+      },
+      {
+        "id": "SC_06",
+        "name": "服务端挂起不响应（应判定超时）",
+        "url": "http://127.0.0.1:53618/hang",
+        "expect": "TIMEOUT",
+        "truth": "TIMEOUT",
+        "actual": "TIMEOUT",
+        "match": true,
+        "truth_ms": 3008,
+        "actual_ms": 3014,
+        "body_ok": null,
+        "body_note": "",
+        "note": ""
+      },
+      {
+        "id": "SC_07",
+        "name": "端口无人监听（应判定连接被拒绝）",
+        "url": "http://127.0.0.1:53619/",
+        "expect": "CONN_REFUSED",
+        "truth": "CONN_REFUSED",
+        "actual": "CONN_REFUSED",
+        "match": true,
+        "truth_ms": 13,
+        "actual_ms": 4,
+        "body_ok": null,
+        "body_note": "",
+        "note": ""
+      },
+      {
+        "id": "SC_08",
+        "name": "域名无法解析（应判定 DNS 失败）",
+        "url": "http://fd-selfcheck-host.invalid/",
+        "expect": "DNS_FAIL",
+        "truth": "DNS_FAIL",
+        "actual": "CONN_REFUSED",
+        "match": false,
+        "truth_ms": 47,
+        "actual_ms": 2,
+        "body_ok": null,
+        "body_note": "",
+        "note": "（已知粒度差异：真值为 DNS 解析失败，系统归类到「连接被拒绝 / 网络不通」，故障层次判断正确，但未细分 DNS 与端口两类原因）"
+      }
+    ]
+  },
+  "attribution": {
+    "total": 10,
+    "passed": 10,
+    "consistency": 100.0,
+    "cases": [
+      {
+        "id": "AT_01",
+        "name": "数据库单行查询返回多行",
+        "expected_category": "database",
+        "actual_category": "database",
+        "actual_hypothesis": "数据库单行查询返回了多行",
+        "confidence": 0.92,
+        "match": true
+      },
+      {
+        "id": "AT_02",
+        "name": "唯一约束冲突",
+        "expected_category": "database",
+        "actual_category": "database",
+        "actual_hypothesis": "唯一约束冲突（重复写入）",
+        "confidence": 0.9,
+        "match": true
+      },
+      {
+        "id": "AT_03",
+        "name": "参数校验失败",
+        "expected_category": "frontend",
+        "actual_category": "frontend",
+        "actual_hypothesis": "请求参数未通过校验",
+        "confidence": 0.86,
+        "match": true
+      },
+      {
+        "id": "AT_04",
+        "name": "请求方法错误",
+        "expected_category": "frontend",
+        "actual_category": "frontend",
+        "actual_hypothesis": "请求方法不被支持（405）",
+        "confidence": 0.88,
+        "match": true
+      },
+      {
+        "id": "AT_05",
+        "name": "服务限流",
+        "expected_category": "service",
+        "actual_category": "service",
+        "actual_hypothesis": "请求被限流（429）",
+        "confidence": 0.88,
+        "match": true
+      },
+      {
+        "id": "AT_06",
+        "name": "网关无法连接后端",
+        "expected_category": "service",
+        "actual_category": "service",
+        "actual_hypothesis": "网关无法连接后端（502）",
+        "confidence": 0.86,
+        "match": true
+      },
+      {
+        "id": "AT_07",
+        "name": "网关等待后端超时",
+        "expected_category": "performance",
+        "actual_category": "performance",
+        "actual_hypothesis": "网关等待后端超时（504）",
+        "confidence": 0.78,
+        "match": true
+      },
+      {
+        "id": "AT_08",
+        "name": "域名解析失败",
+        "expected_category": "network",
+        "actual_category": "network",
+        "actual_hypothesis": "域名解析失败",
+        "confidence": 0.86,
+        "match": true
+      },
+      {
+        "id": "AT_09",
+        "name": "连接超时",
+        "expected_category": "network",
+        "actual_category": "network",
+        "actual_hypothesis": "连接或读取超时",
+        "confidence": 0.8,
+        "match": true
+      },
+      {
+        "id": "AT_10",
+        "name": "跨域配置拦截",
+        "expected_category": "config",
+        "actual_category": "config",
+        "actual_hypothesis": "跨域配置问题",
+        "confidence": 0.86,
+        "match": true
+      }
+    ]
+  },
+  "security": {
+    "unauthorized_status": 400,
+    "authorized_detect_status": "200"
+  },
+  "lifecycle": {
+    "report_id": "RPT_20261106024708902001",
+    "follow_up_status": "fixed",
+    "history_status": "fixed",
+    "owner": "regression",
+    "json_export_bytes": 10214,
+    "markdown_export_bytes": 2297,
+    "deleted": true,
+    "llm_skipped": true
+  },
+  "acceptance": {
+    "passed": true,
+    "expected": "observability 7/8 strict; attribution 10/10"
+  }
+}

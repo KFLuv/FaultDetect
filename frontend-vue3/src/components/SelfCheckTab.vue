@@ -2,12 +2,12 @@
     <section>
         <!-- 说明 + 触发 -->
         <div class="card">
-            <h2>🧪 系统自检（观测层可信度）</h2>
+            <h2>🧪 系统自检（观测层 + 归因层）</h2>
             <p class="hint">
                 排障系统的全部价值建立在「看得准」之上：一旦观测层把 404 错判成超时，后面推理再精致也只是
                 一本正经地给出错误结论。本页用两套<strong>互不依赖</strong>的实现，对内置测试服务各探测一轮再比对 ——
                 真值走 <code>HttpURLConnection</code>，被测走检测系统实际使用的 <code>HttpClient</code>。
-                两者若结论一致，说明观测层可信；不一致的地方会逐条列出，不做掩盖。
+                观测层按<strong>严格类别一致</strong>统计；归因层另用固定事实验证问题归属，两层分开计算，不混成一个准确率。
             </p>
             <ul class="rules">
                 <li>✅ <strong>用例自包含</strong>：内置测试服务只绑 127.0.0.1 随机端口，随自检结束即关闭，换任何机器都能跑</li>
@@ -27,11 +27,11 @@
             <h2>📊 自检结果</h2>
             <div class="summary">
                 <div class="sum-box">
-                    <div class="label">一致率</div>
+                    <div class="label">观测层严格一致率</div>
                     <div class="value" :class="rateClass">{{ result.consistency }}%</div>
                 </div>
                 <div class="sum-box">
-                    <div class="label">通过 / 总数</div>
+                    <div class="label">观测层通过 / 总数</div>
                     <div class="value small">{{ result.passed }} / {{ result.total }}</div>
                 </div>
                 <div class="sum-box">
@@ -49,9 +49,22 @@
                 <span class="src-tag">被测对象：{{ result.subject_source }}</span>
             </div>
 
+            <div v-if="result.attribution" class="attr-summary">
+                <div class="sum-box">
+                    <div class="label">归因层通过 / 总数</div>
+                    <div class="value small">{{ result.attribution.passed }} / {{ result.attribution.total }}</div>
+                </div>
+                <div class="sum-box">
+                    <div class="label">归因层一致率</div>
+                    <div class="value small" :class="result.attribution.passed === result.attribution.total ? 'good' : 'warn'">
+                        {{ result.attribution.consistency }}%
+                    </div>
+                </div>
+            </div>
+
             <div class="verdict-banner" :class="rateClass">
                 <template v-if="result.total && result.passed === result.total">
-                    ✅ 全部用例一致，观测层可信。
+                    ✅ 观测层全部严格一致。
                 </template>
                 <template v-else-if="result.total">
                     ⚠️ 有 {{ result.total - result.passed }} 条不一致，请对照下方明细核查。
@@ -59,6 +72,40 @@
                 <template v-else>
                     ⚠️ 未能取得任何用例结果，请查看下方说明。
                 </template>
+            </div>
+        </div>
+
+        <!-- 归因层明细 -->
+        <div v-if="result && result.attribution && result.attribution.cases" class="card">
+            <h2>🧠 归因层固定用例（{{ result.attribution.cases.length }} 条）</h2>
+            <p class="hint">
+                固定构造观测事实，验证通用规则能否把问题归到正确层次。归因结果用于缩小排查范围，不等同于现场最终根因。
+            </p>
+            <div class="obs-list">
+                <div v-for="c in result.attribution.cases" :key="c.id" class="obs-item" :class="c.match ? 'pass' : 'fail'">
+                    <div class="obs-head">
+                        <span class="obs-icon">{{ c.match ? '✅' : '❌' }}</span>
+                        <span class="obs-id">{{ c.id }}</span>
+                        <span class="obs-name">{{ c.name }}</span>
+                        <span class="obs-verdict">{{ c.match ? '归因正确' : '归因不符' }}</span>
+                    </div>
+                    <div class="obs-cmp">
+                        <span class="cmp-box">
+                            <span class="cmp-label">期望归属</span>
+                            <span class="cmp-val">{{ c.expected_category }}</span>
+                        </span>
+                        <span class="cmp-arrow">vs</span>
+                        <span class="cmp-box">
+                            <span class="cmp-label">实际归属</span>
+                            <span class="cmp-val">{{ c.actual_category || '未确定' }}</span>
+                        </span>
+                        <span class="cmp-box">
+                            <span class="cmp-label">最高假设</span>
+                            <span class="cmp-val">{{ c.actual_hypothesis || '无' }}</span>
+                            <span class="cmp-ms">{{ Math.round((c.confidence || 0) * 100) }}%</span>
+                        </span>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -171,6 +218,12 @@ async function runCheck() {
 .sum-box .value.bad { color: #e05c5c; }
 
 .src-row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.attr-summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px;
+    margin-bottom: 14px;
+}
 .src-tag {
     font-size: 12px;
     color: var(--text-dim);

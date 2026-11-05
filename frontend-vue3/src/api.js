@@ -78,3 +78,32 @@ export async function getStats() {
 export async function getSelfCheck() {
     return api("/api/selfcheck");
 }
+
+// ---------- 本机 LLM 配置 ----------
+export async function getLlmConfig() {
+    return api("/api/config/llm");
+}
+
+export async function saveLlmConfig(payload) {
+    return api("/api/config/llm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+    });
+}
+
+export async function testLlmConfig(payload) {
+    return api("/api/config/llm/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+    });
+}
+
+export async function promoteUnknownCase(reportId, payload) {
+    return api(`/api/history/${encodeURIComponent(reportId)}/promote-unknown`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+    });
+}

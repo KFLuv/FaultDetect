@@ -1,0 +1,59 @@
+{
+  "name": "faultdetect-desktop",
+  "version": "1.3.0",
+  "description": "FaultDetect 可审计排障桌面工作台",
+  "main": "main.js",
+  "scripts": {
+    "jre": "node scripts/make-jre.js",
+    "start": "electron .",
+    "dist": "npm run jre && electron-builder --win portable --publish never"
+  },
+  "author": "",
+  "license": "UNLICENSED",
+  "private": true,
+  "build": {
+    "appId": "com.faultdetect.desktop",
+    "productName": "FaultDetect",
+    "artifactName": "FaultDetect-${version}-portable.${ext}",
+    "files": [
+      "main.js",
+      "preload.js",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../java-backend/target/fault-detect-system.jar",
+        "to": "backend/fault-detect-system.jar"
+      },
+      {
+        "from": "build/jre",
+        "to": "jre"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "FaultDetect-${version}-portable.${ext}"
+    },
+    "electronDownload": {
+      "mirror": "https://npmmirror.com/mirrors/electron/"
+    },
+    "directories": {
+      "output": "release_app",
+      "buildResources": "build"
+    },
+    "portable": {
+      "artifactName": "FaultDetect-${version}-portable.${ext}"
+    }
+  },
+  "devDependencies": {
+    "electron": "^44.7.0",
+    "electron-builder": "^26.15.3"
+  }
+}

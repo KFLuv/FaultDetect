@@ -31,7 +31,7 @@ def parse_url(url):
         host = parsed.hostname or ""
         scheme = parsed.scheme or "http"
         if not host:
-            return {"error": "URL 格式不正确：缺少主机名（示例：http://192.168.1.100:8081）"}
+            return {"error": "URL 格式不正确：缺少主机名（示例：http://192.0.2.10:8081）"}
         port = parsed.port or (443 if scheme == "https" else 80)
         path = parsed.path or "/"
         if parsed.query:

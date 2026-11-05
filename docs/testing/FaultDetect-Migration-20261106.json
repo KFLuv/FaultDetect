@@ -1,0 +1,9 @@
+{
+  "legacy_recovered": "legacy001",
+  "legacy_default_status": "new",
+  "new_case": "RPT_20261106015606864001",
+  "restart_status": "closed",
+  "restart_owner": "migration-test",
+  "version": "1.2.0",
+  "result": "passed"
+}

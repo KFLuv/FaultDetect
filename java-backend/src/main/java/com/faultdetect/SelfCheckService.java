@@ -1,5 +1,6 @@
 package com.faultdetect;
 
+import com.faultdetect.DetectEngine.DetectionResult;
 import com.faultdetect.DetectEngine.ProbeResult;
 import org.springframework.stereotype.Component;
 
@@ -20,6 +21,7 @@ import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -48,9 +50,11 @@ public class SelfCheckService {
     private static final int PROBE_TIMEOUT_SEC = 3;
 
     private final DetectEngine engine;
+    private final HypothesisEngine hypothesisEngine;
 
-    public SelfCheckService(DetectEngine engine) {
+    public SelfCheckService(DetectEngine engine, HypothesisEngine hypothesisEngine) {
         this.engine = engine;
+        this.hypothesisEngine = hypothesisEngine;
     }
 
     // ================= 用例模型 =================
@@ -171,7 +175,9 @@ public class SelfCheckService {
         out.put("consistency", total == 0 ? 0.0 : Math.round(1000.0 * passed / total) / 10.0);
         out.put("truth_source", "java.net.HttpURLConnection（JDK 独立实现，默认 HTTP/1.1）");
         out.put("subject_source", "DetectEngine.httpProbe（java.net.http.HttpClient，已固定 HTTP/1.1）");
+        out.put("strict_rule", "真值与实测类别必须完全一致；DNS 解析失败与连接被拒绝不合并计算");
         out.put("observations", observations);
+        out.put("attribution", runAttribution());
         out.put("notes", notes);
         return out;
     }
@@ -229,13 +235,86 @@ public class SelfCheckService {
         if (truth == null || actual == null) {
             return false;
         }
-        // DNS 解析失败：当前实现归类为「连接被拒绝」，层次判断正确但粒度不足，
-        // 为避免把已知的表达粒度差异算作不一致，这里按「可达性失败」同族计入，
-        // 并在 note 中如实标注，不掩盖该差异。
-        if (T_DNS_FAIL.equals(truth)) {
-            return T_CONN_REFUSED.equals(actual);
-        }
+        // 严格口径：DNS 解析失败与连接被拒绝是两种不同观测结果。
+        // 不在统计层“宽容通过”，差异会保留在 7/8 和逐条 note 中。
         return truth.equals(actual);
+    }
+
+    /**
+     * 归因层固定用例：不访问网络，只验证“观测事实 -> 通用规则 -> 问题归属”是否稳定。
+     * 这一组与观测层分开统计，避免把状态码对比和根因判断混成一个准确率。
+     */
+    private Map<String, Object> runAttribution() {
+        List<Map<String, Object>> cases = new ArrayList<>();
+        cases.add(attributionCase("AT_01", "数据库单行查询返回多行", "database",
+                500, "500", "{\"message\":\"TooManyResultsException: Expected one result\"}", 100));
+        cases.add(attributionCase("AT_02", "唯一约束冲突", "database",
+                500, "500", "{\"message\":\"Duplicate entry 'A001' for key 'uk_code'\"}", 100));
+        cases.add(attributionCase("AT_03", "参数校验失败", "frontend",
+                400, "400", "{\"error\":\"MethodArgumentNotValidException: field name is required\"}", 100));
+        cases.add(attributionCase("AT_04", "请求方法错误", "frontend",
+                405, "405", "{\"message\":\"Request method not supported\"}", 100));
+        cases.add(attributionCase("AT_05", "服务限流", "service",
+                429, "429", "{\"message\":\"Too Many Requests; rate limit\"}", 100));
+        cases.add(attributionCase("AT_06", "网关无法连接后端", "service",
+                502, "502", "{\"message\":\"Bad Gateway: upstream connect failed\"}", 100));
+        cases.add(attributionCase("AT_07", "网关等待后端超时", "performance",
+                504, "504", "{\"message\":\"Gateway Timeout\"}", 100));
+        cases.add(attributionCase("AT_08", "域名解析失败", "network",
+                null, "pending", "UnknownHostException: no such host", 100));
+        cases.add(attributionCase("AT_09", "连接超时", "network",
+                null, "pending", "HttpTimeoutException: connect timed out", 100));
+        cases.add(attributionCase("AT_10", "跨域配置拦截", "config",
+                200, "200", "Access-Control-Allow-Origin missing; blocked by CORS policy", 100));
+
+        int passed = 0;
+        for (Map<String, Object> item : cases) {
+            if (Boolean.TRUE.equals(item.get("match"))) {
+                passed++;
+            }
+        }
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("total", cases.size());
+        out.put("passed", passed);
+        out.put("consistency", cases.isEmpty() ? 0.0
+                : Math.round(1000.0 * passed / cases.size()) / 10.0);
+        out.put("cases", cases);
+        return out;
+    }
+
+    private Map<String, Object> attributionCase(String id, String name, String expectedCategory,
+                                                Integer statusCode, String normalizedStatus,
+                                                String responseBody, int responseTimeMs) {
+        DetectionResult dr = new DetectionResult();
+        ProbeResult probe = new ProbeResult();
+        probe.statusCode = statusCode;
+        probe.statusText = statusCode == null ? "pending" : String.valueOf(statusCode);
+        probe.body = responseBody == null ? "" : responseBody;
+        probe.responseTimeMs = responseTimeMs;
+        probe.headers.put("Content-Type",
+                Collections.singletonList(responseBody != null && responseBody.trim().startsWith("{")
+                        ? "application/json; charset=UTF-8"
+                        : "text/plain; charset=UTF-8"));
+        dr.probe = probe;
+        dr.normalizedStatus = normalizedStatus;
+        dr.keyInfo = engine.extractKeyInfo(probe);
+
+        HypothesisEngine.InferenceResult inference =
+                hypothesisEngine.infer(dr, null, 0.0);
+        HypothesisEngine.Hypothesis top = inference.top;
+        String actualCategory = top == null ? null : top.category;
+        boolean match = expectedCategory.equals(actualCategory);
+
+        Map<String, Object> item = new LinkedHashMap<>();
+        item.put("id", id);
+        item.put("name", name);
+        item.put("expected_category", expectedCategory);
+        item.put("actual_category", actualCategory);
+        item.put("actual_hypothesis", top == null ? null : top.title);
+        item.put("confidence", top == null ? 0.0 : top.confidence);
+        item.put("match", match);
+        return item;
     }
 
     /** 生成每条的补充说明：如实暴露已知的表达粒度差异 */

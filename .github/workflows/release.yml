@@ -1,0 +1,87 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag, for example v1.3.0
+        required: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '11'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            frontend-vue3/package-lock.json
+            desktop/package-lock.json
+
+      - name: Verify version
+        shell: pwsh
+        run: |
+          $tagVersion = $env:TAG.TrimStart('v')
+          $desktopVersion = (Get-Content desktop/package.json -Raw | ConvertFrom-Json).version
+          $frontendVersion = (Get-Content frontend-vue3/package.json -Raw | ConvertFrom-Json).version
+          [xml]$pom = Get-Content java-backend/pom.xml -Raw
+          if ($tagVersion -ne $desktopVersion -or $tagVersion -ne $frontendVersion -or $tagVersion -ne $pom.project.version) {
+            throw "Version mismatch: tag=$tagVersion desktop=$desktopVersion frontend=$frontendVersion backend=$($pom.project.version)"
+          }
+
+      - name: Build frontend
+        working-directory: frontend-vue3
+        shell: pwsh
+        run: |
+          npm ci
+          npm run build
+
+      - name: Copy frontend into backend
+        shell: pwsh
+        run: |
+          $src = "frontend-vue3/dist"
+          $dst = "java-backend/src/main/resources/static"
+          if (Test-Path "$dst/assets") { Remove-Item "$dst/assets" -Recurse -Force }
+          New-Item -ItemType Directory -Path "$dst/assets" | Out-Null
+          Copy-Item -LiteralPath "$src/index.html" -Destination "$dst/index.html" -Force
+          Copy-Item -Path "$src/assets/*" -Destination "$dst/assets" -Force
+
+      - name: Build backend
+        working-directory: java-backend
+        shell: pwsh
+        run: mvn -B clean package -DskipTests
+
+      - name: Build desktop portable
+        working-directory: desktop
+        shell: pwsh
+        run: |
+          npm ci
+          npm run jre
+          npx electron-builder --win portable --publish never
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG }}
+          name: FaultDetect ${{ env.TAG }}
+          body_path: RELEASE_NOTES_V1.3.0.md
+          files: |
+            desktop/release_app/FaultDetect-*-portable.exe
+            java-backend/target/fault-detect-system.jar

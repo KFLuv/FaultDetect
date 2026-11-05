@@ -136,7 +136,9 @@ public class LlmAdvisor {
     }
 
     public boolean isReady() {
-        return enabled && endpoint != null && !endpoint.trim().isEmpty();
+        return enabled
+                && endpoint != null && !endpoint.trim().isEmpty()
+                && apiKey != null && !apiKey.trim().isEmpty();
     }
 
     // ================= 主入口 =================
@@ -499,6 +501,95 @@ public class LlmAdvisor {
         m.put("insecure_tls", insecureTls);
         m.put("has_api_key", apiKey != null && !apiKey.trim().isEmpty());
         return m;
+    }
+
+    /** 保存设置后立即更新当前进程配置，密钥不会回传前端。 */
+    public synchronized void updateConfig(boolean enabled, String endpoint, String apiKey,
+                                          String model, int timeoutSeconds, boolean insecureTls) {
+        this.enabled = enabled;
+        this.endpoint = endpoint == null ? "" : endpoint.trim();
+        this.apiKey = apiKey == null ? "" : apiKey.trim();
+        this.model = model == null ? "" : model.trim();
+        this.timeoutSeconds = Math.max(5, Math.min(timeoutSeconds, 120));
+        this.insecureTls = insecureTls;
+        this.trustAllSsl = null;
+    }
+
+    /** 用尚未保存的表单配置测试 OpenAI 兼容接口，不记录或返回密钥。 */
+    public Map<String, Object> testConnection(String endpoint, String apiKey, String model,
+                                              int timeoutSeconds, boolean insecureTls) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        if (endpoint == null || endpoint.trim().isEmpty()) {
+            result.put("status", "error");
+            result.put("message", "Endpoint 不能为空");
+            return result;
+        }
+        if (apiKey == null || apiKey.trim().isEmpty()) {
+            result.put("status", "error");
+            result.put("message", "API Key 不能为空");
+            return result;
+        }
+        int timeout = Math.max(5, Math.min(timeoutSeconds, 120));
+        long start = System.currentTimeMillis();
+        try {
+            ObjectNode root = MAPPER.createObjectNode();
+            if (model != null && !model.trim().isEmpty()) {
+                root.put("model", model.trim());
+            }
+            root.put("temperature", 0);
+            ArrayNode messages = root.putArray("messages");
+            ObjectNode msg = messages.addObject();
+            msg.put("role", "user");
+            msg.put("content", "Reply with the single word OK.");
+            HttpRequest request = HttpRequest.newBuilder(URI.create(endpoint.trim()))
+                    .timeout(Duration.ofSeconds(timeout))
+                    .header("Content-Type", "application/json")
+                    .header("Accept", "application/json")
+                    .header("Authorization", "Bearer " + apiKey.trim())
+                    .POST(HttpRequest.BodyPublishers.ofString(
+                            MAPPER.writeValueAsString(root), StandardCharsets.UTF_8))
+                    .build();
+            HttpClient.Builder builder = HttpClient.newBuilder()
+                    .version(HttpClient.Version.HTTP_1_1)
+                    .connectTimeout(Duration.ofSeconds(Math.min(5, timeout)))
+                    .followRedirects(HttpClient.Redirect.NORMAL);
+            if (insecureTls) {
+                builder.sslContext(testTrustAllSslContext());
+            }
+            HttpResponse<String> response = builder.build()
+                    .send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            result.put("latency_ms", System.currentTimeMillis() - start);
+            if (response.statusCode() >= 200 && response.statusCode() < 300) {
+                result.put("status", "ok");
+                result.put("message", "连接成功，模型接口可用");
+            } else {
+                result.put("status", "error");
+                result.put("message", "接口返回 HTTP " + response.statusCode());
+                result.put("raw", clip(response.body(), REASON_LIMIT));
+            }
+        } catch (Exception e) {
+            result.put("latency_ms", System.currentTimeMillis() - start);
+            result.put("status", "error");
+            result.put("message", "连接失败：" + e.getClass().getSimpleName()
+                    + " - " + clip(e.getMessage(), REASON_LIMIT));
+        }
+        return result;
+    }
+
+    private SSLContext testTrustAllSslContext() throws Exception {
+        SSLContext ctx = SSLContext.getInstance("TLS");
+        ctx.init(null, new TrustManager[]{new X509TrustManager() {
+            public void checkClientTrusted(X509Certificate[] c, String a) {
+            }
+
+            public void checkServerTrusted(X509Certificate[] c, String a) {
+            }
+
+            public X509Certificate[] getAcceptedIssuers() {
+                return new X509Certificate[0];
+            }
+        }}, new java.security.SecureRandom());
+        return ctx;
     }
 
     /** 未命中任何规则时的兜底验证动作（LLM 结论升格为主结论时若数组为空则用它，避免出现空建议） */
