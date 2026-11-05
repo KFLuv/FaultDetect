@@ -40,6 +40,23 @@ FaultDetect 是一个以**可复现、可审计、只读安全**为约束的排�
 - 当前没有第二个人独立完成现场验收，不宣称已有真实用户规模或商业验证。
 - 外部系统行为、日志和数据库状态仍需按报告中的验证动作现场复核。
 
+## 业务人员怎么用
+
+1. 打开左侧“使用教学”，先在内置模拟业务系统里走一遍。
+2. 粘贴真实 Web 业务系统首页，在 FaultDetect 内置窗口里正常登录。
+3. 进入目标页面后点击“开始记录本次问题”。
+4. 点击出问题的业务按钮，系统会关联按钮文字和它触发的请求。
+5. 完成采集后选择失败请求，确认授权并执行只读检测。
+
+内置采集只监听 FaultDetect 自己的业务系统窗口，不会监听原来的 Chrome / Edge 页面，也不会监听手机或桌面原生 App。后两类场景分别需要浏览器扩展或 SDK / 代理接入。
+
+## 密钥边界与核对
+
+- 仓库不包含真实 DeepSeek 或其他模型 Key。
+- FaultDetect 的真实 Key 只保存在仓库外的 `%USERPROFILE%\.faultdetect\application.properties`。
+- 2026-11-06 已核对当前工作区和全部 Git 历史，未发现当前实际使用的 DeepSeek Key。
+- 界面只返回打码 Key，不返回明文；导出文件和运行日志也不包含 Key。
+
 ## 产品闭环
 
 ```text
@@ -159,10 +176,11 @@ LLM 默认关闭。未配置、网络不可达、超时或返回格式异常时�
 
 目标机器无需安装 Java、Node.js 或浏览器。业务数据默认保存在 `%LOCALAPPDATA%\FaultDetectSystem\data\`。
 
-当前本地构建包：
+GitHub Release 包：
 
 - 大小：166,999,369 bytes
 - SHA-256：`AA9D869273475913526F591A8EC9E84D3859C03E49190DD0DC1826E60123E18C`
+- 下载：<https://github.com/KFLuv/FaultDetect/releases/tag/v1.3.2>
 
 ### 本地构建
 
@@ -200,6 +218,11 @@ docker compose -f docker-compose-java.yml up -d
 | GET | `/api/scenarios?code=500` | 场景列表 |
 | POST | `/api/detect` | 执行诊断 |
 | POST | `/api/add-scenario` | 新增自定义场景 |
+| POST | `/api/scenario-preview` | 保存前验证自定义场景是否会被命中 |
+| GET | `/demo/capture.html` | 内置教学业务系统 |
+| GET | `/demo/api/ok` | 教学用正常查询 |
+| GET | `/demo/api/error` | 教学用失败查询 |
+| POST | `/demo/api/post-error` | 教学用提交类请求，不自动重放 |
 | GET | `/api/history` | 诊断任务列表 |
 | GET | `/api/history/{reportId}` | 完整报告 |
 | POST | `/api/history/{reportId}/follow-up` | 状态、负责人和跟进备注 |
