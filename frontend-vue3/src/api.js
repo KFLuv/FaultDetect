@@ -12,8 +12,56 @@ export const store = reactive({
 })
 
 // ---------- 通用工具 ----------
+let backendRecovery = null
+
+async function localBackendHealthy() {
+    try {
+        const resp = await fetch("/api/health", { cache: "no-store" })
+        if (!resp.ok) return false
+        const data = await resp.json()
+        return data.status === "ok"
+    } catch {
+        return false
+    }
+}
+
+async function recoverLocalBackend() {
+    if (backendRecovery) return backendRecovery
+    backendRecovery = (async () => {
+        if (await localBackendHealthy()) return true
+        if (!window.faultDetectDesktop?.restartBackend) return false
+        try {
+            return await window.faultDetectDesktop.restartBackend()
+        } catch {
+            return false
+        }
+    })().finally(() => {
+        backendRecovery = null
+    })
+    return backendRecovery
+}
+
 export async function api(url, options) {
-    const resp = await fetch(url, options);
+    let resp
+    try {
+        resp = await fetch(url, options)
+    } catch (firstError) {
+        const recovered = url.startsWith("/api/") && await recoverLocalBackend()
+        if (!recovered) {
+            throw new Error(
+                "本地诊断服务连接中断。请关闭后重新打开 FaultDetect 桌面版；" +
+                "如果仍然失败，请检查 8000 端口是否被其他程序占用。"
+            )
+        }
+        try {
+            resp = await fetch(url, options)
+        } catch {
+            throw new Error(
+                "本地诊断服务已重启，但仍无法完成请求。请重新打开桌面版后重试，" +
+                "并检查安全软件是否拦截了 127.0.0.1:8000。"
+            )
+        }
+    }
     if (!resp.ok) {
         let msg = "请求失败（HTTP " + resp.status + "）";
         try {

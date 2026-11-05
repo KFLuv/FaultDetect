@@ -21,7 +21,8 @@ FaultDetect 是一个以**可复现、可审计、只读安全**为约束的排�
 - 完整诊断链路返回状态码、检测步骤、差分实验、假设、证据、报告和历史记录。
 - 无效 URL 返回 400，不会让服务崩溃。
 - 桌面版包含内嵌 JRE，目标机器无需安装 Java。
-- `FaultDetect-1.3.0-portable.exe` 已通过 Electron 桌面窗口启动验证，不再调用系统浏览器。
+- `FaultDetect-1.3.1-portable.exe` 已通过 Electron 桌面窗口启动验证，不再调用系统浏览器。
+- 本地后端被终止后，桌面端可以自动重启并重试当前检测请求，不再直接显示 `fail to fetch`。
 - 后端只监听 `127.0.0.1`，API 还会再次校验回环地址。
 - 每次检测必须确认已获得目标系统授权。
 - 历史任务支持状态、负责人、备注、导出、重新检测和单条删除。
@@ -150,14 +151,14 @@ LLM 默认关闭。未配置、网络不可达、超时或返回格式异常时�
 
 ### 桌面 EXE
 
-双击 `FaultDetect-1.3.0-portable.exe`。程序会在 Electron 桌面窗口中直接打开界面，自动启动内置 JRE 和本地后端，不依赖系统浏览器。
+双击 `FaultDetect-1.3.1-portable.exe`。程序会在 Electron 桌面窗口中直接打开界面，自动启动内置 JRE 和本地后端，不依赖系统浏览器。
 
 目标机器无需安装 Java、Node.js 或浏览器。业务数据默认保存在 `%LOCALAPPDATA%\FaultDetectSystem\data\`。
 
 当前本地构建包：
 
-- 大小：166,975,625 bytes
-- SHA-256：`91EF744644AD2FCE4F1721E6BE96D51A4ADA272AC49EEB7BAC3B1C82AC9BBE2A`
+- 大小：166,973,502 bytes
+- SHA-256：`A0EEDA18EBDFC5386D9D7A515AF645B1D55478D0FA549DB1102147CCD0B5EAA2`
 
 ### 本地构建
 
@@ -179,7 +180,7 @@ java -jar target\fault-detect-system.jar
 
 ### Docker
 
-当前正式定位为本机单用户安全模式。Docker 文件暂保留用于构建研究，不作为 v1.3.0 的受支持运行方式。
+当前正式定位为本机单用户安全模式。Docker 文件暂保留用于构建研究，不作为 v1.3.1 的受支持运行方式。
 
 ```bash
 docker compose -f docker-compose-java.yml up -d
@@ -228,6 +229,7 @@ docker compose -f docker-compose-java.yml up -d
 ## 验证材料
 
 - [v1.3.0 桌面回归报告](docs/testing/FaultDetect-Regression-desktop-v1.3.0.md)
+- [v1.3.1 后端断线恢复验证](docs/testing/FaultDetect-Fetch-Recovery-v1.3.1.md)
 - [浏览器 UI 冒烟结果](docs/testing/FaultDetect-UI-Smoke-20261106.json)
 - [旧库迁移报告](docs/testing/FaultDetect-Migration-20261106.json)
 - [LLM 增强验证](docs/testing/FaultDetect-LLM-Validation-20261106.md)
@@ -235,7 +237,7 @@ docker compose -f docker-compose-java.yml up -d
 - [现场任务验收](docs/testing/FaultDetect-Field-Task-20261105.md)
 - [可重复回归脚本](scripts/run-faultdetect-regression.ps1)
 - [本地故障目标](scripts/faultdetect_mock_target.py)
-- [v1.3.0 发版说明](RELEASE_NOTES_V1.3.0.md)
+- [v1.3.1 发版说明](RELEASE_NOTES_V1.3.1.md)
 - [产品化完整验证](docs/testing/FaultDetect-Operational-Validation-20261106.md)
 - [全功能验收报告](docs/testing/FaultDetect-Full-Acceptance-20261106.md)
 - [安全边界](docs/security/SECURITY-BOUNDARY.md)
@@ -245,7 +247,7 @@ docker compose -f docker-compose-java.yml up -d
 ```powershell
 .\scripts\run-faultdetect-regression.ps1 `
   -BaseUrl http://127.0.0.1:8000 `
-  -Label desktop-v1.3.0
+  -Label desktop-v1.3.1
 
 cd frontend-vue3
 npm run test:ui

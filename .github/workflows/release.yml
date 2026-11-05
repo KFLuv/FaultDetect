@@ -45,6 +45,11 @@ jobs:
           if ($tagVersion -ne $desktopVersion -or $tagVersion -ne $frontendVersion -or $tagVersion -ne $pom.project.version) {
             throw "Version mismatch: tag=$tagVersion desktop=$desktopVersion frontend=$frontendVersion backend=$($pom.project.version)"
           }
+          $notesPath = "RELEASE_NOTES_${env:TAG}.md"
+          if (-not (Test-Path $notesPath)) {
+            throw "Release notes file not found: $notesPath"
+          }
+          "NOTES_PATH=$notesPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Build frontend
         working-directory: frontend-vue3
@@ -81,7 +86,7 @@ jobs:
         with:
           tag_name: ${{ env.TAG }}
           name: FaultDetect ${{ env.TAG }}
-          body_path: RELEASE_NOTES_V1.3.0.md
+          body_path: ${{ env.NOTES_PATH }}
           files: |
             desktop/release_app/FaultDetect-*-portable.exe
             java-backend/target/fault-detect-system.jar

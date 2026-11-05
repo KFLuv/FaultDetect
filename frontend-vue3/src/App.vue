@@ -60,7 +60,7 @@
                     <Activity :size="15" />
                     <div>
                         <strong>7/8 观测层</strong>
-                        <span>10/10 归因层 · v1.3.0</span>
+                        <span>10/10 归因层 · v1.3.1</span>
                     </div>
                 </div>
             </div>
@@ -123,7 +123,7 @@
             </section>
 
             <footer class="app-footer">
-                FaultDetect v1.3.0 · 7 步只读排障 Workflow · 观测层与归因层分开验证
+                FaultDetect v1.3.1 · 7 步只读排障 Workflow · 观测层与归因层分开验证
             </footer>
         </main>
 

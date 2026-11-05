@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "1.3.0",
+    [string]$Version = "1.3.1",
     [string]$JavaHome = "E:\JDK11",
     [string]$MavenHome = "E:\apache-maven-3.9.16"
 )

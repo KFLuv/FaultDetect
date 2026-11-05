@@ -10,19 +10,20 @@ $patterns = @(
     '\b192\.168\.\d{1,3}\.\d{1,3}\b',
     '\b10\.\d{1,3}\.\d{1,3}\.\d{1,3}\b',
     '\b172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}\b',
-    ('(?i)\bcgn\b|cgnpc|' + '中广' + '核')
+    ('(?i)\bcgn\b|cgnpc|' + [char]0x4E2D + [char]0x5E7F + [char]0x6838)
 )
 
-$extensions = @(
-    '*.java', '*.xml', '*.yml', '*.yaml', '*.json', '*.js', '*.vue',
-    '*.md', '*.py', '*.ps1', '*.html', '*.css'
-)
-$files = Get-ChildItem -LiteralPath $Root -Recurse -File -Include $extensions -ErrorAction SilentlyContinue |
+$relativePaths = & git -C $Root ls-files --cached --others --exclude-standard
+if ($LASTEXITCODE -ne 0) {
+    throw "git ls-files failed while collecting files for the secret scan"
+}
+$files = $relativePaths |
     Where-Object {
-        $_.FullName -notmatch '\\(node_modules|dist|target|runtime|data|\.git)\\' -and
-        $_.FullName -notmatch '\\docs\\testing\\FaultDetect-Regression-.*\.json$' -and
-        $_.FullName -ne $PSCommandPath
-    }
+        $_ -match '\.(java|xml|yml|yaml|json|js|vue|md|py|ps1|html|css)$' -and
+        $_ -notmatch '^docs[\\/]testing[\\/]FaultDetect-Regression-.*\.json$' -and
+        (Join-Path $Root $_) -ne $PSCommandPath
+    } |
+    ForEach-Object { Get-Item -LiteralPath (Join-Path $Root $_) -ErrorAction SilentlyContinue }
 
 $findings = @()
 foreach ($file in $files) {

@@ -176,7 +176,7 @@ public class ApiController {
     public Map<String, Object> health() {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("status", "ok");
-        m.put("version", "1.3.0");
+        m.put("version", "1.3.1");
         m.put("security_mode", "local-only");
         m.put("total_scenarios", allScenarios().size());
         m.put("total_status_codes", knowledge.statusCodes.size());

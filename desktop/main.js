@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, session, shell } = require('electron')
+const { app, BrowserWindow, dialog, ipcMain, session, shell } = require('electron')
 const { spawn } = require('child_process')
 const fs = require('fs')
 const http = require('http')
@@ -42,6 +42,7 @@ function backendArgs(jar) {
 }
 
 function startBackend() {
+  if (backend) return
   const jar = jarPath()
   const java = javaPath()
   fs.mkdirSync(dataDir(), { recursive: true })
@@ -65,6 +66,7 @@ function startBackend() {
   backend.on('exit', code => {
     console.log('[backend] exited', code)
     backend = null
+    spawnedBackend = false
   })
 }
 
@@ -74,6 +76,16 @@ function stopBackend() {
   }
   backend = null
   spawnedBackend = false
+}
+
+async function restartBackend() {
+  stopBackend()
+  for (let i = 0; i < 20; i += 1) {
+    if (!(await ping())) break
+    await new Promise(resolve => setTimeout(resolve, 250))
+  }
+  if (!(await ping())) startBackend()
+  return waitForBackend(45000)
 }
 
 function ping() {
@@ -173,6 +185,8 @@ if (!hasLock) {
     }
     createWindow()
   })
+
+  ipcMain.handle('backend:restart', () => restartBackend())
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
