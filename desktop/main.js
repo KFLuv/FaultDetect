@@ -3,12 +3,14 @@ const { spawn } = require('child_process')
 const fs = require('fs')
 const http = require('http')
 const path = require('path')
+const { createCaptureService } = require('./capture')
 
 const PORT = 8000
 const BASE_URL = `http://127.0.0.1:${PORT}`
 let mainWindow = null
 let backend = null
 let spawnedBackend = false
+let captureService = null
 
 function resourcePath(...parts) {
   return path.join(process.resourcesPath, ...parts)
@@ -143,6 +145,11 @@ function createWindow() {
   mainWindow.on('closed', () => { mainWindow = null })
 }
 
+function publishCaptureState(state) {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  mainWindow.webContents.send('capture:updated', state)
+}
+
 const hasLock = app.requestSingleInstanceLock()
 if (!hasLock) {
   app.quit()
@@ -155,11 +162,16 @@ if (!hasLock) {
   })
 
   app.whenReady().then(async () => {
+    captureService = createCaptureService({ onUpdate: publishCaptureState })
     session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
       callback(permission === 'geolocation')
     })
 
     app.on('web-contents-created', (_event, contents) => {
+      if (captureService.ownsSession(contents.session)) {
+        contents.setWindowOpenHandler(({ url }) => captureService.allowWindowOpen(url))
+        return
+      }
       contents.setWindowOpenHandler(({ url }) => {
         if (url.startsWith(BASE_URL)) return { action: 'allow' }
         if (/^https?:\/\//i.test(url)) shell.openExternal(url)
@@ -187,6 +199,17 @@ if (!hasLock) {
   })
 
   ipcMain.handle('backend:restart', () => restartBackend())
+  ipcMain.handle('capture:open', (_event, startUrl) => captureService.open(startUrl))
+  ipcMain.handle('capture:state', () => captureService.state())
+  ipcMain.handle('capture:set-recording', (_event, enabled) => captureService.setRecording(enabled))
+  ipcMain.handle('capture:close', () => {
+    captureService.close()
+    return { ok: true }
+  })
+  ipcMain.handle('capture:clear', () => captureService.clear())
+  ipcMain.on('capture:ui-action', (event, payload) => {
+    if (captureService.ownsContents(event.sender)) captureService.noteUiAction(payload)
+  })
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

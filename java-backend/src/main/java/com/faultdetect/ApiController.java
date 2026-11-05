@@ -99,6 +99,12 @@ public class ApiController {
         public String priority = "中";
     }
 
+    public static class ScenarioPreviewRequest extends AddScenarioRequest {
+        public String test_status = "";
+        public String test_response = "";
+        public String test_symptom = "";
+    }
+
     public static class CaseUpdateRequest {
         public String status;
         public String owner = "";
@@ -150,6 +156,24 @@ public class ApiController {
         return all;
     }
 
+    private Scenario buildScenario(AddScenarioRequest req, String id) {
+        Scenario sc = new Scenario();
+        sc.id = id;
+        sc.name = req.name;
+        sc.http_codes = req.http_codes.stream().map(String::valueOf).collect(Collectors.toList());
+        sc.response_patterns = req.response_patterns == null ? new ArrayList<>() : req.response_patterns;
+        sc.ui_symptoms = req.ui_symptoms == null ? new ArrayList<>() : req.ui_symptoms;
+        sc.root_cause = req.root_cause;
+        sc.conclusion = (req.conclusion == null || req.conclusion.trim().isEmpty()) ? req.name : req.conclusion;
+        sc.evidence = Collections.singletonList("（自定义场景）请按 SOP 手动补充证据");
+        sc.solution = (req.solution == null || req.solution.isEmpty())
+                ? Collections.singletonList("联系研发确认处理方案") : req.solution;
+        sc.probability = 0.9;
+        sc.priority = req.priority == null ? "中" : req.priority;
+        sc.custom = true;
+        return sc;
+    }
+
     private static String now() {
         return new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date());
     }
@@ -176,7 +200,7 @@ public class ApiController {
     public Map<String, Object> health() {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("status", "ok");
-        m.put("version", "1.3.1");
+        m.put("version", "1.3.2");
         m.put("security_mode", "local-only");
         m.put("total_scenarios", allScenarios().size());
         m.put("total_status_codes", knowledge.statusCodes.size());
@@ -305,20 +329,7 @@ public class ApiController {
                 // 非 SCN_xxx 格式则忽略
             }
         }
-        Scenario sc = new Scenario();
-        sc.id = String.format("SCN_%03d", maxId + 1);
-        sc.name = req.name;
-        sc.http_codes = req.http_codes.stream().map(String::valueOf).collect(Collectors.toList());
-        sc.response_patterns = req.response_patterns == null ? new ArrayList<>() : req.response_patterns;
-        sc.ui_symptoms = req.ui_symptoms == null ? new ArrayList<>() : req.ui_symptoms;
-        sc.root_cause = req.root_cause;
-        sc.conclusion = (req.conclusion == null || req.conclusion.trim().isEmpty()) ? req.name : req.conclusion;
-        sc.evidence = Collections.singletonList("（自定义场景）请按 SOP 手动补充证据");
-        sc.solution = (req.solution == null || req.solution.isEmpty())
-                ? Collections.singletonList("联系研发确认处理方案") : req.solution;
-        sc.probability = 0.9;
-        sc.priority = req.priority == null ? "中" : req.priority;
-        sc.custom = true;
+        Scenario sc = buildScenario(req, String.format("SCN_%03d", maxId + 1));
 
         history.addCustomScenario(sc);
 
@@ -327,6 +338,76 @@ public class ApiController {
         out.put("scenario", sc);
         out.put("total", allScenarios().size());
         return out;
+    }
+
+    @PostMapping("/api/scenario-preview")
+    public Map<String, Object> previewScenario(@RequestBody ScenarioPreviewRequest req) {
+        if (req.name == null || req.name.trim().isEmpty()) {
+            throw new ApiException(400, "场景名称不能为空");
+        }
+        if (req.http_codes == null || req.http_codes.isEmpty()) {
+            throw new ApiException(400, "至少需要一个状态码");
+        }
+        if (req.test_status == null || req.test_status.trim().isEmpty()) {
+            throw new ApiException(400, "请填写用于验证的状态码");
+        }
+
+        String testStatus = req.test_status.trim();
+        String response = req.test_response == null ? "" : req.test_response.trim();
+        String symptom = req.test_symptom == null ? "" : req.test_symptom.trim();
+        List<String> features = response.isEmpty() ? Collections.emptyList() : Collections.singletonList(response);
+        Scenario preview = buildScenario(req, "PREVIEW");
+        MatcherEngine.ScoreResult previewScore = matcherEngine.scoreScenario(preview, testStatus, features, symptom);
+
+        Scenario bestCompetitor = null;
+        MatcherEngine.ScoreResult bestCompetitorScore = null;
+        for (Scenario scenario : allScenarios()) {
+            MatcherEngine.ScoreResult score = matcherEngine.scoreScenario(scenario, testStatus, features, symptom);
+            if (score.score <= 0) continue;
+            boolean better = bestCompetitorScore == null
+                    || score.score > bestCompetitorScore.score
+                    || (score.score == bestCompetitorScore.score
+                    && Boolean.TRUE.equals(scenario.custom)
+                    && !Boolean.TRUE.equals(bestCompetitor.custom));
+            if (better) {
+                bestCompetitor = scenario;
+                bestCompetitorScore = score;
+            }
+        }
+
+        double confidence = matcherEngine.confidenceFromScore(previewScore.score);
+        boolean beatsCompetitor = bestCompetitorScore == null
+                || previewScore.score >= bestCompetitorScore.score;
+        boolean wouldMatch = confidence >= com.faultdetect.HypothesisEngine.FAST_PATH_MIN_CONFIDENCE
+                && beatsCompetitor;
+
+        List<String> advice = new ArrayList<>();
+        if (response.isEmpty() && symptom.isEmpty()) {
+            advice.add("补充响应特征或界面症状，否则无法与同状态码的内置场景区分。");
+        }
+        if (!beatsCompetitor && bestCompetitor != null) {
+            advice.add("当前示例会优先命中已有场景「" + bestCompetitor.name + "」，请增加更具体的关键词。");
+        }
+        if (!wouldMatch && advice.isEmpty()) {
+            advice.add("当前置信度不足，保存后不会直接成为主结论。");
+        }
+        if (wouldMatch) {
+            advice.add("当前示例会命中该自定义场景，可以保存。");
+        }
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("would_match", wouldMatch);
+        result.put("score", previewScore.score);
+        result.put("confidence", confidence);
+        result.put("reasons", previewScore.reasons);
+        result.put("advice", advice);
+        Map<String, Object> competitor = new LinkedHashMap<>();
+        competitor.put("id", bestCompetitor == null ? "" : bestCompetitor.id);
+        competitor.put("name", bestCompetitor == null ? "无" : bestCompetitor.name);
+        competitor.put("score", bestCompetitorScore == null ? 0 : bestCompetitorScore.score);
+        competitor.put("custom", bestCompetitor != null && Boolean.TRUE.equals(bestCompetitor.custom));
+        result.put("best_competitor", competitor);
+        return result;
     }
 
     @GetMapping("/api/history")

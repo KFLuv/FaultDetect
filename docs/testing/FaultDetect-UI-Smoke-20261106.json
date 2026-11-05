@@ -1,8 +1,8 @@
 {
-  "generated_at": "2026-11-06T02:47:22+08:00",
+  "generated_at": "2026-11-06T04:17:29+08:00",
   "base_url": "http://127.0.0.1:8000",
-  "report_id": "RPT_20261106024720095002",
-  "nav_items": 6,
+  "report_id": "RPT_20261106041726648004",
+  "nav_items": 7,
   "old_tab_nav": false,
   "clipboard_contains_report": true,
   "authorization_checked": true,
@@ -13,11 +13,24 @@
   "llm_disabled_rules_only": true,
   "unknown_mode_rendered": true,
   "unknown_layers": 7,
+  "custom_scenario_preflight_warned": true,
+  "custom_scenario_preflight_matched": true,
+  "capture_browser_fallback_rendered": true,
+  "desktop_capture_layout": {
+    "noHorizontalOverflow": true,
+    "cardVisible": true,
+    "cardInsideViewport": true
+  },
+  "mobile_capture_layout": {
+    "noHorizontalOverflow": true,
+    "cardVisible": true,
+    "cardInsideViewport": true
+  },
   "page_errors": [],
   "mobile_sidebar_width": 58,
   "dialogs": [
     "汇报文本已复制到剪贴板",
-    "确定删除报告 RPT_20261106024720095002？此操作不可恢复。",
+    "确定删除报告 RPT_20261106041726648004？此操作不可恢复。",
     "研发交接包已复制"
   ]
 }

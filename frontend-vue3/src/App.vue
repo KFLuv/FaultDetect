@@ -60,7 +60,7 @@
                     <Activity :size="15" />
                     <div>
                         <strong>7/8 观测层</strong>
-                        <span>10/10 归因层 · v1.3.1</span>
+                        <span>10/10 归因层 · v1.3.2</span>
                     </div>
                 </div>
             </div>
@@ -110,6 +110,7 @@
 
             <section class="workspace-content">
                 <DetectTab v-show="tab === 'detect'" :preset="detectPreset" @changed="reloadStats" />
+                <TutorialTab v-show="tab === 'tutorial'" @demo-opened="tab = 'detect'" />
                 <ScenariosTab v-show="tab === 'scenarios'" />
                 <StatusCodesTab v-show="tab === 'status-codes'" />
                 <HistoryTab
@@ -123,7 +124,7 @@
             </section>
 
             <footer class="app-footer">
-                FaultDetect v1.3.1 · 7 步只读排障 Workflow · 观测层与归因层分开验证
+                FaultDetect v1.3.2 · 7 步只读排障 Workflow · 观测层与归因层分开验证
             </footer>
         </main>
 
@@ -137,6 +138,7 @@ import {
     Activity,
     FlaskConical,
     Gauge,
+    GraduationCap,
     Hash,
     History,
     LibraryBig,
@@ -150,6 +152,7 @@ import {
     Sun
 } from 'lucide-vue-next'
 import DetectTab from './components/DetectTab.vue'
+import TutorialTab from './components/TutorialTab.vue'
 import ScenariosTab from './components/ScenariosTab.vue'
 import StatusCodesTab from './components/StatusCodesTab.vue'
 import HistoryTab from './components/HistoryTab.vue'
@@ -170,6 +173,13 @@ const navItems = [
         kicker: 'DIAGNOSE',
         description: '输入目标 URL 与症状，执行 7 步观测、差分实验和归因推理。',
         icon: ScanSearch
+    },
+    {
+        key: 'tutorial',
+        label: '使用教学',
+        kicker: 'GUIDE',
+        description: '先在内置模拟系统里走一遍采集和诊断，再用于真实 Web 业务系统。',
+        icon: GraduationCap
     },
     {
         key: 'scenarios',

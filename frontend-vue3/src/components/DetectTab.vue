@@ -1,12 +1,28 @@
 <template>
     <section>
-        <!-- ============ 输入区 ============ -->
-        <div class="card input-card">
-            <h2>📝 输入故障信息</h2>
+        <CaptureAssistant :loading="loading" @use-request="useCapturedRequest" />
+
+        <button
+            type="button"
+            class="manual-toggle"
+            data-testid="manual-toggle"
+            :aria-expanded="manualOpen"
+            @click="manualOpen = !manualOpen"
+        >
+            <Wrench :size="17" />
+            <span>
+                <strong>技术人员入口</strong>
+                <small>手动输入接口 URL、症状和认证信息</small>
+            </span>
+            <ChevronDown :size="17" class="manual-chevron" :class="{ open: manualOpen }" />
+        </button>
+
+        <!-- ============ 技术人员输入区 ============ -->
+        <div v-if="manualOpen" class="card input-card">
             <div class="form-row">
                 <div class="form-group grow">
                     <label>故障 URL（必填）</label>
-                    <input type="text" v-model="form.url" placeholder="例如：http://192.0.2.10:8081/api/users">
+                    <input type="text" v-model="form.url" data-testid="manual-url" placeholder="例如：http://192.0.2.10:8081/api/users">
                 </div>
             </div>
             <div class="form-row">
@@ -204,25 +220,43 @@
 
 <script setup>
 import { ref, reactive, computed, watch } from 'vue'
+import { ChevronDown, Wrench } from 'lucide-vue-next'
 import { api, esc, catColor, catLabel } from '../api'
 import { pickStatusTeach, pickCategoryTeach } from '../teaching-data'
 import TeachingTab from './TeachingTab.vue'
 import UnknownCasePanel from './UnknownCasePanel.vue'
+import CaptureAssistant from './CaptureAssistant.vue'
 
 const emit = defineEmits(['changed'])
 const props = defineProps({
     preset: { type: Object, default: null }
 })
-const form = reactive({ url: '', symptom: '', authorizedTarget: false, serviceCheck: true, contrastCheck: true, llmCheck: false, timeout: '10', cookieVal: '', tokenVal: '', authScheme: '', authSchemeCustom: '', headersOpen: false })
+const form = reactive({
+    url: '',
+    symptom: '',
+    authorizedTarget: false,
+    serviceCheck: true,
+    contrastCheck: true,
+    llmCheck: false,
+    timeout: '10',
+    cookieVal: '',
+    tokenVal: '',
+    authScheme: '',
+    authSchemeCustom: '',
+    extraHeaders: {},
+    headersOpen: false
+})
 const loading = ref(false)
 const report = ref(null)
 const reportEl = ref(null)
+const manualOpen = ref(false)
 
 watch(() => props.preset, (value) => {
     if (!value) return
     form.url = value.url || ''
     form.symptom = value.symptom || ''
     report.value = null
+    manualOpen.value = true
 }, { deep: true })
 
 // ---------- Authorization 前缀拼接 ----------
@@ -251,11 +285,12 @@ function detect() {
     // 登录凭证（Cookie / Token）：Authorization 按上面所选前缀拼接，不再自动补 Bearer
     const cookie = form.cookieVal.trim()
     let headers = null
-    if (cookie || form.tokenVal.trim()) {
+    if (cookie || form.tokenVal.trim() || Object.keys(form.extraHeaders).length) {
         headers = {}
         if (cookie) headers['Cookie'] = cookie
         const authValue = buildAuthValue()
         if (authValue) headers['Authorization'] = authValue
+        Object.assign(headers, form.extraHeaders)
     }
     loading.value = true
     api('/api/detect', {
@@ -280,6 +315,49 @@ function detect() {
     }).finally(() => {
         loading.value = false
     })
+}
+
+function headerValue(headers, name) {
+    const target = name.toLowerCase()
+    const found = Object.entries(headers || {}).find(([key]) => key.toLowerCase() === target)
+    return found ? String(found[1]) : ''
+}
+
+function useCapturedRequest(item) {
+    if (!item || item.method !== 'GET') {
+        alert('提交类请求不会自动重放，请让研发查看这条请求记录。')
+        return
+    }
+    if (window.faultDetectDesktop?.closeCapture) window.faultDetectDesktop.closeCapture()
+
+    form.url = item.url
+    form.symptom = item.isFailure
+        ? `一键采集：${item.method} ${item.path}，${item.statusCode ? 'HTTP ' + item.statusCode : '请求连接失败'}`
+        : `一键采集：${item.method} ${item.path}，页面业务结果异常`
+    form.authorizedTarget = true
+    form.cookieVal = headerValue(item.headers, 'cookie')
+
+    const authorization = headerValue(item.headers, 'authorization')
+    const match = authorization.match(/^(\S+)\s+(.+)$/)
+    const knownSchemes = ['Bearer', 'Basic', 'Token', 'JWT', 'ApiKey']
+    if (match && knownSchemes.some(scheme => scheme.toLowerCase() === match[1].toLowerCase())) {
+        form.authScheme = knownSchemes.find(scheme => scheme.toLowerCase() === match[1].toLowerCase())
+        form.tokenVal = match[2]
+    } else if (match) {
+        form.authScheme = '__custom'
+        form.authSchemeCustom = match[1]
+        form.tokenVal = match[2]
+    } else {
+        form.authScheme = ''
+        form.authSchemeCustom = ''
+        form.tokenVal = authorization
+    }
+    form.extraHeaders = Object.fromEntries(
+        Object.entries(item.headers || {}).filter(([key]) => !['authorization', 'cookie'].includes(key.toLowerCase()))
+    )
+    form.headersOpen = Boolean(form.cookieVal || form.tokenVal)
+    report.value = null
+    detect()
 }
 
 // ---------- 渲染（与原版 innerHTML 逻辑一致，内容已 esc 防 XSS）----------
@@ -542,6 +620,7 @@ function clear() {
     form.tokenVal = ''
     form.authScheme = ''
     form.authSchemeCustom = ''
+    form.extraHeaders = {}
     form.contrastCheck = true
     form.llmCheck = false
     report.value = null
@@ -555,6 +634,52 @@ function clear() {
     border: 1px solid color-mix(in srgb, var(--warning) 28%, var(--border));
     border-radius: 7px;
     background: color-mix(in srgb, var(--warning) 6%, transparent);
+}
+
+.manual-toggle {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    margin: 0 0 12px;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    background: var(--bg-card);
+    color: var(--text-dim);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.manual-toggle:hover {
+    background: var(--bg-card-hover);
+    color: var(--text);
+}
+
+.manual-toggle span {
+    min-width: 0;
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+}
+
+.manual-toggle strong {
+    color: var(--text);
+    font-size: 12px;
+}
+
+.manual-toggle small {
+    color: var(--text-dim);
+    font-size: 10px;
+}
+
+.manual-chevron {
+    transition: transform 0.16s ease;
+}
+
+.manual-chevron.open {
+    transform: rotate(180deg);
 }
 
 /* 动态教学卡 */

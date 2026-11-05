@@ -54,11 +54,26 @@ try {
     })
 
     await page.goto(baseUrl, { waitUntil: 'networkidle' })
-    assert.equal(await page.locator('.side-nav-item').count(), 6)
+    assert.equal(await page.locator('.side-nav-item').count(), 7)
     assert.equal(await page.locator('.tab-nav').count(), 0)
+    assert.equal(await page.getByTestId('capture-assistant').count(), 1)
+    assert.ok((await page.getByTestId('capture-assistant').innerText()).includes('仅在 FaultDetect 桌面版可用'))
+    const desktopLayout = await page.evaluate(() => {
+        const card = document.querySelector('[data-testid="capture-assistant"]')
+        const rect = card.getBoundingClientRect()
+        return {
+            noHorizontalOverflow: document.documentElement.scrollWidth <= window.innerWidth + 1,
+            cardVisible: rect.width > 0 && rect.height > 0,
+            cardInsideViewport: rect.left >= 0 && rect.right <= window.innerWidth + 1
+        }
+    })
+    assert.equal(desktopLayout.noHorizontalOverflow, true)
+    assert.equal(desktopLayout.cardVisible, true)
+    assert.equal(desktopLayout.cardInsideViewport, true)
 
     const navExpectations = [
         ['故障检测', '故障检测'],
+        ['使用教学', '使用教学'],
         ['场景库', '场景库'],
         ['状态码', '状态码'],
         ['历史记录', '历史记录'],
@@ -71,8 +86,9 @@ try {
     }
 
     await page.locator('.side-nav-item', { hasText: '故障检测' }).click()
+    await page.getByTestId('manual-toggle').click()
     const targetUrl = 'http://127.0.0.1:18080/error?token=UI_SECRET&x=1'
-    await page.getByPlaceholder(/http/).fill(targetUrl)
+    await page.getByTestId('manual-url').fill(targetUrl)
     await page.locator('input[placeholder*="页面显示空表格"]').fill('UI smoke test')
     await page.locator('label.auth-confirm input').check()
     await page.getByRole('button', { name: /开始检测/ }).click()
@@ -103,7 +119,7 @@ try {
     await page.locator('.case-item', { hasText: reportId }).getByRole('button', { name: '重新检测' }).click()
     await page.locator('.page-heading h1', { hasText: '故障检测' }).waitFor()
     const redactedTargetUrl = targetUrl.replace('UI_SECRET', '***')
-    assert.equal(await page.getByPlaceholder(/http/).inputValue(), redactedTargetUrl)
+    assert.equal(await page.getByTestId('manual-url').inputValue(), redactedTargetUrl)
 
     const beforeTheme = await page.locator('body').getAttribute('data-theme')
     await page.locator('.utility-btn', { hasText: /深色模式|浅色模式/ }).click()
@@ -128,7 +144,10 @@ try {
     assert.equal(await page.locator('.case-item', { hasText: reportId }).count(), 0)
 
     await page.locator('.side-nav-item', { hasText: '故障检测' }).click()
-    await page.getByPlaceholder(/http/).fill('http://127.0.0.1:18080/unknown-598')
+    if (await page.getByTestId('manual-toggle').getAttribute('aria-expanded') !== 'true') {
+        await page.getByTestId('manual-toggle').click()
+    }
+    await page.getByTestId('manual-url').fill('http://127.0.0.1:18080/unknown-598')
     await page.locator('input[placeholder*="页面显示空表格"]').fill('未登记的第三方组件状态异常')
     await page.locator('label.auth-confirm input').check()
     const unknownResponsePromise = page.waitForResponse(response =>
@@ -144,6 +163,23 @@ try {
     assert.equal(await page.locator('.unknown-panel .layer-row').count(), 7)
     assert.ok(await page.locator('.unknown-panel .experiment-item').count() >= 1)
     await page.locator('.unknown-panel').getByRole('button', { name: '复制交接包' }).click()
+
+    await page.locator('.side-nav-item', { hasText: '新增场景' }).click()
+    await page.locator('input[placeholder="例如：短信服务欠费"]').fill('UI 测试自定义场景')
+    await page.getByPlaceholder('例如：200, 401').fill('500')
+    await page.getByPlaceholder('例如：500').fill('500')
+    await page.getByPlaceholder('例如：短信余额不足').fill('普通服务异常')
+    await page.getByPlaceholder('例如：发送短信提示失败').fill('页面失败')
+    await page.getByRole('button', { name: '验证匹配' }).click()
+    await page.locator('.preview-result.warn').waitFor()
+    assert.match(await page.locator('.preview-result.warn').innerText(), /不会成为主结论/)
+
+    await page.getByPlaceholder('例如：欠费, balance, insufficient').fill('UI_CUSTOM_MARKER')
+    await page.getByPlaceholder('例如：短信余额不足').fill('UI_CUSTOM_MARKER service failed')
+    await page.getByRole('button', { name: '验证匹配' }).click()
+    await page.locator('.preview-result.good').waitFor()
+    assert.match(await page.locator('.preview-result.good').innerText(), /这个场景会命中/)
+
     assert.deepEqual(pageErrors, [])
 
     const mobile = await context.newPage()
@@ -151,7 +187,19 @@ try {
     await mobile.goto(baseUrl, { waitUntil: 'networkidle' })
     const sidebarBox = await mobile.locator('.sidebar').boundingBox()
     assert.ok(sidebarBox && sidebarBox.width < 100)
-    assert.equal(await mobile.locator('.side-nav-item').count(), 6)
+    assert.equal(await mobile.locator('.side-nav-item').count(), 7)
+    const mobileLayout = await mobile.evaluate(() => {
+        const card = document.querySelector('[data-testid="capture-assistant"]')
+        const rect = card.getBoundingClientRect()
+        return {
+            noHorizontalOverflow: document.documentElement.scrollWidth <= window.innerWidth + 1,
+            cardVisible: rect.width > 0 && rect.height > 0,
+            cardInsideViewport: rect.left >= 0 && rect.right <= window.innerWidth + 1
+        }
+    })
+    assert.equal(mobileLayout.noHorizontalOverflow, true)
+    assert.equal(mobileLayout.cardVisible, true)
+    assert.equal(mobileLayout.cardInsideViewport, true)
     await mobile.screenshot({
         path: path.join(outputDir, 'FaultDetect-UI-Smoke-Mobile.png'),
         fullPage: true
@@ -171,7 +219,7 @@ try {
         generated_at: localTimestamp,
         base_url: baseUrl,
         report_id: reportId,
-        nav_items: 6,
+        nav_items: 7,
         old_tab_nav: false,
         clipboard_contains_report: true,
         authorization_checked: true,
@@ -182,6 +230,11 @@ try {
         llm_disabled_rules_only: true,
         unknown_mode_rendered: true,
         unknown_layers: 7,
+        custom_scenario_preflight_warned: true,
+        custom_scenario_preflight_matched: true,
+        capture_browser_fallback_rendered: true,
+        desktop_capture_layout: desktopLayout,
+        mobile_capture_layout: mobileLayout,
         page_errors: pageErrors,
         mobile_sidebar_width: sidebarBox.width,
         dialogs

@@ -101,8 +101,9 @@ public class MatcherEngine {
         }
 
         // 3. 症状关键词匹配
+        int symHits = 0;
         if (symptomsText != null && !symptomsText.isEmpty()) {
-            int symHits = matchKeywords(symptomsText,
+            symHits = matchKeywords(symptomsText,
                     sc.ui_symptoms == null ? Collections.emptyList() : sc.ui_symptoms);
             if (symHits > 0) {
                 score += Math.min(symHits * 6, 18);
@@ -110,17 +111,31 @@ public class MatcherEngine {
             }
         }
 
-        // 4. 优先级加成
+        // 4. 自定义场景不能只靠常见状态码抢结论。
+        // 例如所有 500 都有一条“自定义 500”，没有响应或症状关键词时无法区分，
+        // 这类场景只保留为低置信候选，由未知场景模式继续收集证据。
+        boolean builtinHasStatus = knowledge.scenarios.stream()
+                .anyMatch(item -> item.http_codes != null && item.http_codes.contains(normalizedStatus));
+        if (Boolean.TRUE.equals(sc.custom) && builtinHasStatus && featHits == 0 && symHits == 0) {
+            score = Math.min(score, 30);
+            reasons.add("仅状态码匹配，缺少响应或症状特征，不能作为高置信结论");
+        }
+        if (Boolean.TRUE.equals(sc.custom) && (featHits > 0 || symHits > 0)) {
+            score += 12;
+            reasons.add("自定义场景命中用户维护的区分特征");
+        }
+
+        // 5. 优先级加成
         if ("高".equals(sc.priority)) {
             score += 2;
         }
 
-        // 5. 概率加权（保留 2 位小数）
+        // 6. 概率加权（保留 2 位小数）
         score = Math.round(score * (0.7 + 0.3 * sc.probability) * 100.0) / 100.0;
         return new ScoreResult(score, reasons);
     }
 
-    /** 匹配最佳场景，返回 topN 备选（仅内置场景，与 Python 版一致） */
+    /** 匹配最佳场景，返回内置场景和已持久化自定义场景的 topN 备选。 */
     public List<MatchResult> matchScenario(String normalizedStatus, List<String> features, String symptomsText, int topN) {
         List<MatchResult> results = new ArrayList<>();
         List<Scenario> allScenarios = new ArrayList<>(knowledge.scenarios);
@@ -131,7 +146,14 @@ public class MatcherEngine {
                 results.add(new MatchResult(sc, sr.score, sr.reasons));
             }
         }
-        results.sort((a, b) -> Double.compare(b.score, a.score));
+        results.sort((a, b) -> {
+            int byScore = Double.compare(b.score, a.score);
+            if (byScore != 0) return byScore;
+            boolean aCustom = Boolean.TRUE.equals(a.scenario.custom);
+            boolean bCustom = Boolean.TRUE.equals(b.scenario.custom);
+            if (aCustom != bCustom) return aCustom ? -1 : 1;
+            return 0;
+        });
         List<MatchResult> top = new ArrayList<>(results.subList(0, Math.min(topN, results.size())));
 
         if (top.isEmpty()) {
@@ -408,6 +430,8 @@ public class MatcherEngine {
             mm.put("root_cause_label", knowledge.categoryLabels.getOrDefault(m.scenario.root_cause, "无法确定"));
             mm.put("score", m.score);
             mm.put("confidence", confidenceFromScore(m.score));
+            mm.put("custom", Boolean.TRUE.equals(m.scenario.custom));
+            mm.put("reasons", m.reasons);
             matchList.add(mm);
         }
         conclusion.put("matches", matchList);

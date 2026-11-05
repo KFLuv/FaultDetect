@@ -1,0 +1,26 @@
+{
+  "ok": true,
+  "version": "1.3.2",
+  "broad_500_preview": {
+    "would_match": false,
+    "confidence": 0.49,
+    "best_competitor": "代码逻辑错误"
+  },
+  "specific_500_preview": {
+    "would_match": true,
+    "confidence": 0.78
+  },
+  "persisted_custom_500": {
+    "scenario_name": "自定义-演示异常",
+    "matched": true,
+    "score": 58.2,
+    "confidence": 0.97,
+    "knowledge_fast_path": true
+  },
+  "persisted_custom_599": {
+    "scenario_name": "自定义-599状态",
+    "matched": true,
+    "knowledge_fast_path": true
+  },
+  "broad_500_did_not_hijack": true
+}
