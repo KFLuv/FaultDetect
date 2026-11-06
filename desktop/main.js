@@ -223,11 +223,10 @@ if (!hasLock) {
   })
   ipcMain.handle('capture:open', (_event, startUrl) => captureService.open(startUrl))
   ipcMain.handle('capture:state', () => captureService.state())
+  ipcMain.handle('capture:register-webview', (_event, webContentsId) =>
+    captureService.attachResponseInspector(webContentsId))
   ipcMain.handle('capture:set-recording', (_event, enabled) => captureService.setRecording(enabled))
-  ipcMain.handle('capture:close', () => {
-    captureService.close()
-    return { ok: true }
-  })
+  ipcMain.handle('capture:close', () => captureService.close())
   ipcMain.handle('capture:clear', () => captureService.clear())
   ipcMain.handle('capture:note-action', (_event, payload) => captureService.noteUiAction(payload))
 

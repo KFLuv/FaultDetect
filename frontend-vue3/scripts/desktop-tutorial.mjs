@@ -29,6 +29,10 @@ assert.match(getCapture.url(), /\/demo\/sites\/orders\.html$/)
 await mainPage.getByTestId('capture-workspace').getByRole('button', { name: '开始记录本次问题' }).click()
 await getCapture.getByRole('button', { name: /查询订单（失败）/ }).click()
 await getCapture.locator('#result', { hasText: 'HTTP 500' }).waitFor()
+const getSnapshotState = await mainPage.evaluate(() => window.faultDetectDesktop.getCaptureState())
+const getErrorSnapshot = getSnapshotState.requests.find(item => item.path === '/demo/api/error')
+assert.ok(getErrorSnapshot?.responseSnapshot)
+assert.match(getErrorSnapshot.responseSnapshot.responseBody, /DemoServiceException/)
 await mainPage.getByTestId('capture-workspace').getByRole('button', { name: '完成采集' }).click()
 
 const getRow = mainPage.locator('.candidate-row', { hasText: '查询订单（失败）' })
@@ -54,6 +58,12 @@ await postRow.waitFor({ timeout: 15000 })
 assert.match(await postRow.innerText(), /POST/)
 assert.equal(await postRow.locator('[data-testid="capture-candidate"]').count(), 0)
 assert.match(await postRow.innerText(), /复制交接信息/)
+await postRow.getByRole('button', { name: '失败快照' }).click()
+const snapshotText = await mainPage.locator('.snapshot-panel').innerText()
+assert.match(snapshotText, /后端\/上游/)
+assert.match(snapshotText, /DemoServiceException/)
+assert.match(snapshotText, /demo-/)
+await mainPage.locator('.snapshot-panel').getByRole('button', { name: '关闭' }).click()
 await postRow.getByRole('button', { name: '复制交接信息' }).click()
 const clipboard = spawnSync('powershell', ['-NoProfile', '-Command', 'Get-Clipboard -Raw'], {
     encoding: 'utf8'
@@ -61,23 +71,26 @@ const clipboard = spawnSync('powershell', ['-NoProfile', '-Command', 'Get-Clipbo
 assert.match(clipboard.stdout, /提交审批/)
 
 await mainPage.screenshot({
-    path: path.join(outputDir, 'FaultDetect-Tutorial-1.3.4.png'),
+    path: path.join(outputDir, 'FaultDetect-Tutorial-1.3.5.png'),
     fullPage: true
 })
 
 const result = {
     ok: true,
-    version: '1.3.4',
+    version: '1.3.5',
     tutorial_nav_rendered: true,
     built_in_demo_opened: true,
     get_action_mapped: true,
     get_detected_status: 500,
+    get_snapshot_verified: true,
     post_replay_blocked: true,
     native_clipboard_verified: true,
+    post_snapshot_verified: true,
+    trace_id_verified: true,
     page_errors: pageErrors
 }
 fs.writeFileSync(
-    path.join(outputDir, 'FaultDetect-Tutorial-1.3.4.json'),
+    path.join(outputDir, 'FaultDetect-Tutorial-1.3.5.json'),
     JSON.stringify(result, null, 2),
     'utf8'
 )

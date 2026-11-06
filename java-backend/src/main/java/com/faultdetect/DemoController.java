@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * 内置教学业务系统使用的本地接口。
@@ -64,6 +65,7 @@ public class DemoController {
         result.put("code", status);
         result.put("message", message);
         return ResponseEntity.status(status)
+                .header("X-Request-Id", "demo-" + UUID.randomUUID())
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(result);
     }

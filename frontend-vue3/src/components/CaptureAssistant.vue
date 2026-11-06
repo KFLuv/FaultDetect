@@ -80,6 +80,14 @@
                         <span>{{ item.actionLabel ? item.host + item.path : item.path }}</span>
                     </span>
                     <button
+                        v-if="item.failureReason"
+                        type="button"
+                        class="candidate-snapshot"
+                        @click="snapshotItem = item"
+                    >
+                        失败快照
+                    </button>
+                    <button
                         v-if="!item.replayable"
                         type="button"
                         class="candidate-copy-action"
@@ -99,6 +107,25 @@
                         <ArrowRight :size="15" />
                     </button>
                 </div>
+            </div>
+            <div v-if="snapshotItem" class="snapshot-panel">
+                <div class="snapshot-head">
+                    <div>
+                        <strong>原始失败快照</strong>
+                        <span>{{ snapshotItem.method }} {{ snapshotItem.host }}{{ snapshotItem.path }}</span>
+                    </div>
+                    <button type="button" class="plain-action" @click="snapshotItem = null">关闭</button>
+                </div>
+                <div class="snapshot-grid">
+                    <div><span>状态</span><strong>{{ snapshotItem.responseSnapshot?.statusCode || '网络失败' }}</strong></div>
+                    <div><span>问题层</span><strong>{{ snapshotItem.failureLayer || '待判断' }}</strong></div>
+                    <div><span>Trace ID</span><strong class="mono-value">{{ snapshotItem.traceId || '未提供' }}</strong></div>
+                    <div><span>耗时</span><strong>{{ snapshotItem.responseSnapshot?.durationMs != null ? snapshotItem.responseSnapshot.durationMs + ' ms' : '—' }}</strong></div>
+                </div>
+                <p><b>初步判断：</b>{{ snapshotItem.failureReason }}</p>
+                <p><b>下一步：</b>{{ snapshotItem.nextStep }}</p>
+                <pre v-if="snapshotItem.responseSnapshot?.responseBody">{{ snapshotItem.responseSnapshot.responseBody }}</pre>
+                <p v-else class="snapshot-empty">没有取得响应体，可继续使用 Trace ID 或服务端日志定位。</p>
             </div>
         </div>
 
@@ -181,9 +208,11 @@ const authorized = ref(false)
 const requests = ref([])
 const errorMessage = ref('')
 const copiedId = ref(0)
+const snapshotItem = ref(null)
 const captureWebview = ref(null)
 const captureUrl = ref('')
 let unsubscribe = null
+let inspectorReadyPromise = Promise.resolve(false)
 
 const sortedRequests = computed(() => [...requests.value].sort((left, right) => {
     if (left.isFailure !== right.isFailure) return left.isFailure ? -1 : 1
@@ -245,12 +274,26 @@ function handleWebviewMessage(event) {
 }
 
 function handleWebviewReady() {
-    captureWebview.value?.focus()
+    const view = captureWebview.value
+    if (!view) return
+    view.focus()
+    try {
+        inspectorReadyPromise = window.faultDetectDesktop
+            .registerCaptureWebview(view.getWebContentsId())
+            .then(result => Boolean(result?.ok))
+            .catch(() => false)
+    } catch {
+        inspectorReadyPromise = Promise.resolve(false)
+    }
 }
 
 async function startRecording() {
     errorMessage.value = ''
     try {
+        const inspectorReady = await inspectorReadyPromise
+        if (!inspectorReady) {
+            errorMessage.value = '网页请求仍可记录，但响应快照通道未就绪；建议刷新页面后重试。'
+        }
         applyState(await window.faultDetectDesktop.setCaptureRecording(true))
     } catch (error) {
         errorMessage.value = '开始记录失败：' + (error.message || String(error))
@@ -270,6 +313,7 @@ async function finishRecording() {
 async function clearRequests() {
     await window.faultDetectDesktop.clearCapture()
     authorized.value = false
+    snapshotItem.value = null
 }
 
 async function copyHandoff(item) {
@@ -278,8 +322,12 @@ async function copyHandoff(item) {
         `操作：${item.actionLabel || '未识别'}`,
         `请求：${item.method} ${item.host}${item.path}`,
         `结果：${observed}`,
+        `问题层：${item.failureLayer || '未确定'}`,
+        `初步判断：${item.failureReason || '暂无'}`,
+        `下一步：${item.nextStep || '请研发结合日志继续定位'}`,
+        `Trace ID：${item.traceId || '未提供'}`,
         `时间：${new Date(item.capturedAt).toLocaleString()}`,
-        '说明：该请求可能提交业务数据，FaultDetect 未自动重放，请研发按服务端日志核查。'
+        '说明：该请求可能提交业务数据，FaultDetect 未自动重放。'
     ].join('\n')
     try {
         await copyText(text)
@@ -662,11 +710,19 @@ watch(active, syncWorkspace)
 }
 
 .candidate-action,
+.candidate-snapshot,
 .candidate-copy-action {
     border: 0;
     background: transparent;
     font: inherit;
     cursor: pointer;
+}
+
+.candidate-snapshot {
+    flex: 0 0 auto;
+    color: var(--primary);
+    font-size: 10px;
+    font-weight: 600;
 }
 
 .candidate-action {
@@ -688,6 +744,98 @@ watch(active, syncWorkspace)
     flex: 0 0 auto;
     color: var(--warning);
     font-size: 10px;
+}
+
+.snapshot-panel {
+    margin-top: 12px;
+    padding: 13px;
+    border: 1px solid color-mix(in srgb, var(--primary) 24%, var(--border));
+    border-radius: 7px;
+    background: color-mix(in srgb, var(--primary) 4%, var(--bg-card));
+}
+
+.snapshot-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.snapshot-head div {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.snapshot-head strong {
+    font-size: 12px;
+}
+
+.snapshot-head span {
+    overflow: hidden;
+    color: var(--text-dim);
+    font-size: 10px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.snapshot-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 7px;
+    margin: 10px 0;
+}
+
+.snapshot-grid div {
+    min-width: 0;
+    padding: 7px 8px;
+    border-radius: 6px;
+    background: var(--bg-card);
+}
+
+.snapshot-grid span {
+    display: block;
+    color: var(--text-dim);
+    font-size: 9px;
+}
+
+.snapshot-grid strong {
+    display: block;
+    overflow: hidden;
+    margin-top: 2px;
+    font-size: 10px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.mono-value {
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.snapshot-panel p {
+    margin: 5px 0;
+    color: var(--text-dim);
+    font-size: 10px;
+    line-height: 1.55;
+}
+
+.snapshot-panel b {
+    color: var(--text);
+}
+
+.snapshot-panel pre {
+    max-height: 180px;
+    overflow: auto;
+    margin: 9px 0 0;
+    padding: 9px;
+    border-radius: 6px;
+    background: var(--bg-inset);
+    color: var(--code-text);
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-size: 9px;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    word-break: break-word;
 }
 
 .capture-empty {
@@ -860,6 +1008,10 @@ watch(active, syncWorkspace)
 
     .workspace-nav {
         display: none;
+    }
+
+    .snapshot-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
 }
