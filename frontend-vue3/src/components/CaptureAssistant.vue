@@ -124,8 +124,28 @@
                 </div>
                 <p><b>初步判断：</b>{{ snapshotItem.failureReason }}</p>
                 <p><b>下一步：</b>{{ snapshotItem.nextStep }}</p>
+                <div v-if="snapshotItem.responseSnapshot?.requestBody" class="request-evidence">
+                    <div class="snapshot-subhead">
+                        <strong>脱敏请求体</strong>
+                        <span>{{ snapshotItem.responseSnapshot.requestContentType || 'Content-Type 未提供' }}</span>
+                    </div>
+                    <pre>{{ snapshotItem.responseSnapshot.requestBody }}</pre>
+                </div>
                 <pre v-if="snapshotItem.responseSnapshot?.responseBody">{{ snapshotItem.responseSnapshot.responseBody }}</pre>
                 <p v-else class="snapshot-empty">没有取得响应体，可继续使用 Trace ID 或服务端日志定位。</p>
+                <div v-if="snapshotItem.traceId" class="trace-actions">
+                    <button type="button" @click="copyTraceId(snapshotItem)">复制 Trace ID</button>
+                    <button type="button" @click="traceEditorOpen = !traceEditorOpen">配置日志入口</button>
+                    <button v-if="traceTemplateConfigured" type="button" @click="openTraceLog(snapshotItem)">打开日志平台</button>
+                </div>
+                <div v-if="traceEditorOpen && snapshotItem.traceId" class="trace-template-editor">
+                    <label>
+                        <span>日志查询 URL 模板</span>
+                        <input v-model="traceTemplateInput" placeholder="https://log.example.com/search?traceId={traceId}" />
+                    </label>
+                    <button type="button" class="btn btn-primary" @click="saveTraceTemplate">保存模板</button>
+                    <small>使用 <span class="mono">{traceId}</span> 作为占位符；模板只保存在本机浏览器。</small>
+                </div>
             </div>
         </div>
 
@@ -153,6 +173,16 @@
                     </button>
                 </div>
                 <div class="workspace-actions">
+                    <button
+                        type="button"
+                        class="body-evidence-toggle"
+                        :class="{ active: captureRequestBody }"
+                        data-testid="request-body-toggle"
+                        @click="toggleRequestBody"
+                    >
+                        <FileJson :size="14" />
+                        请求体证据 {{ captureRequestBody ? '开' : '关' }}
+                    </button>
                     <button v-if="!recording" type="button" class="workspace-record" @click="startRecording">
                         开始记录本次问题
                     </button>
@@ -164,6 +194,7 @@
                     </button>
                 </div>
             </header>
+            <div v-if="errorMessage" class="workspace-alert">{{ errorMessage }}</div>
             <div class="browser-host">
                 <webview
                     ref="captureWebview"
@@ -174,6 +205,15 @@
                     @ipc-message="handleWebviewMessage"
                     @dom-ready="handleWebviewReady"
                 />
+                <div v-if="browserError" class="browser-error" data-testid="browser-error">
+                    <strong>{{ browserError.title }}</strong>
+                    <p>{{ browserError.detail }}</p>
+                    <span>{{ browserError.tip }}</span>
+                    <div>
+                        <button type="button" class="btn btn-primary" @click="retryBrowser">重新加载</button>
+                        <button type="button" class="btn btn-ghost" @click="closeBusinessSystem">返回地址</button>
+                    </div>
+                </div>
             </div>
         </div>
     </Teleport>
@@ -187,6 +227,7 @@ import {
     ChevronLeft,
     ChevronRight,
     ExternalLink,
+    FileJson,
     MousePointerClick,
     RefreshCw,
     ShieldCheck,
@@ -203,6 +244,7 @@ const supported = ref(Boolean(window.faultDetectDesktop?.openCapture))
 const siteUrl = ref('')
 const active = ref(false)
 const recording = ref(false)
+const captureRequestBody = ref(false)
 const opening = ref(false)
 const authorized = ref(false)
 const requests = ref([])
@@ -211,8 +253,16 @@ const copiedId = ref(0)
 const snapshotItem = ref(null)
 const captureWebview = ref(null)
 const captureUrl = ref('')
+const browserError = ref(null)
+const traceEditorOpen = ref(false)
+const traceTemplateInput = ref(localStorage.getItem('faultdetect-trace-template') || '')
 let unsubscribe = null
 let inspectorReadyPromise = Promise.resolve(false)
+let webviewListenersAttached = false
+
+const traceTemplateConfigured = computed(() =>
+    /\{(?:traceId|trace_id)\}/.test(traceTemplateInput.value)
+)
 
 const sortedRequests = computed(() => [...requests.value].sort((left, right) => {
     if (left.isFailure !== right.isFailure) return left.isFailure ? -1 : 1
@@ -224,8 +274,10 @@ function applyState(state) {
     if (!state) return
     active.value = Boolean(state.active)
     recording.value = Boolean(state.recording)
+    captureRequestBody.value = Boolean(state.captureRequestBody)
     captureUrl.value = state.targetUrl || ''
     requests.value = Array.isArray(state.requests) ? state.requests : []
+    browserError.value = state.loadError ? describeBrowserError(state.loadError) : null
 }
 
 function syncWorkspace() {
@@ -277,6 +329,16 @@ function handleWebviewReady() {
     const view = captureWebview.value
     if (!view) return
     view.focus()
+    if (!webviewListenersAttached) {
+        view.addEventListener('did-start-loading', () => {
+            browserError.value = null
+        })
+        view.addEventListener('did-fail-load', handleWebviewFail)
+        view.addEventListener('did-fail-provisional-load', handleWebviewFail)
+        view.addEventListener('did-stop-loading', () => inspectWebviewResult(view))
+        view.addEventListener('render-process-gone', handleWebviewGone)
+        webviewListenersAttached = true
+    }
     try {
         inspectorReadyPromise = window.faultDetectDesktop
             .registerCaptureWebview(view.getWebContentsId())
@@ -285,6 +347,102 @@ function handleWebviewReady() {
     } catch {
         inspectorReadyPromise = Promise.resolve(false)
     }
+}
+
+async function inspectWebviewResult(view) {
+    if (!view || browserError.value) return
+    try {
+        const text = await view.executeJavaScript(
+            'document.body ? document.body.innerText.slice(0, 1200) : ""',
+            true
+        )
+        if (/ERR_(?:CONNECTION_REFUSED|NAME_NOT_RESOLVED|INTERNET_DISCONNECTED|TIMED_OUT|CERT_)|无法访问此网站|连接被拒绝|This site can.t be reached/i.test(text)) {
+            browserError.value = {
+                title: '网页未能正常加载',
+                detail: text.replace(/\s+/g, ' ').slice(0, 260),
+                tip: '检查 DNS、端口、代理、VPN、防火墙和证书。浏览器错误页内容已保留为兼容性证据。'
+            }
+        }
+    } catch {}
+}
+
+function describeBrowserError(event) {
+    if (event.errorCode === -3) return null
+    const descriptions = {
+        '-102': ['连接被拒绝', '检查服务是否启动、端口是否正确，以及 VPN/代理是否生效。'],
+        '-105': ['域名解析失败', '检查域名、DNS、VPN 或内网地址是否可从当前机器访问。'],
+        '-106': ['网络已断开', '检查本机网络、VPN、代理和防火墙。'],
+        '-118': ['连接超时', '检查目标网络、代理、服务负载和防火墙。'],
+        '-200': ['证书日期无效', '检查服务器证书有效期和本机系统时间。'],
+        '-202': ['证书不受信任', '检查企业 CA、证书链或客户端证书；FaultDetect 不会自动绕过证书错误。']
+    }
+    const mapped = descriptions[String(event.errorCode)] || [
+        '网页加载失败',
+        event.errorDescription || '当前内嵌浏览器无法完成页面加载。'
+    ]
+    return {
+        title: mapped[0],
+        detail: mapped[1],
+        tip: `错误代码 ${event.errorCode || '未知'}。若需要在原浏览器中完成 SSO/MFA/证书流程，请记录该限制；当前不支持时不要继续假设页面已加载。`
+    }
+}
+
+function handleWebviewFail(event) {
+    if (event.isMainFrame === false) return
+    browserError.value = describeBrowserError(event)
+}
+
+function handleWebviewGone(event) {
+    browserError.value = {
+        title: '内嵌网页进程异常退出',
+        detail: `原因：${event.reason || 'unknown'}`,
+        tip: '可以重新加载；重复出现时应检查目标网页兼容性和应用日志。'
+    }
+}
+
+function retryBrowser() {
+    browserError.value = null
+    captureWebview.value?.reload()
+}
+
+async function toggleRequestBody() {
+    const next = !captureRequestBody.value
+    if (next && !window.confirm('请求体可能包含表单字段、手机号或业务数据。启用后只在本机内存中脱敏保存，并在展示前再次过滤敏感字段。是否继续？')) {
+        return
+    }
+    try {
+        applyState(await window.faultDetectDesktop.setCaptureOptions({ captureRequestBody: next }))
+    } catch (error) {
+        errorMessage.value = '请求体证据设置失败：' + (error.message || String(error))
+    }
+}
+
+async function copyTraceId(item) {
+    if (!item.traceId) return
+    await copyText(item.traceId)
+    errorMessage.value = 'Trace ID 已复制'
+    setTimeout(() => {
+        if (errorMessage.value === 'Trace ID 已复制') errorMessage.value = ''
+    }, 1600)
+}
+
+function saveTraceTemplate() {
+    const value = traceTemplateInput.value.trim()
+    if (value && !/\{(?:traceId|trace_id)\}/.test(value)) {
+        errorMessage.value = '日志 URL 模板必须包含 {traceId} 占位符'
+        return
+    }
+    traceTemplateInput.value = value
+    localStorage.setItem('faultdetect-trace-template', value)
+    traceEditorOpen.value = false
+}
+
+async function openTraceLog(item) {
+    if (!item.traceId || !traceTemplateConfigured.value) return
+    const url = traceTemplateInput.value
+        .replaceAll('{traceId}', encodeURIComponent(item.traceId))
+        .replaceAll('{trace_id}', encodeURIComponent(item.traceId))
+    await window.faultDetectDesktop.openExternal(url)
 }
 
 async function startRecording() {
@@ -318,7 +476,7 @@ async function clearRequests() {
 
 async function copyHandoff(item) {
     const observed = item.error || (item.statusCode ? `HTTP ${item.statusCode}` : '请求完成')
-    const text = [
+    const lines = [
         `操作：${item.actionLabel || '未识别'}`,
         `请求：${item.method} ${item.host}${item.path}`,
         `结果：${observed}`,
@@ -328,7 +486,11 @@ async function copyHandoff(item) {
         `Trace ID：${item.traceId || '未提供'}`,
         `时间：${new Date(item.capturedAt).toLocaleString()}`,
         '说明：该请求可能提交业务数据，FaultDetect 未自动重放。'
-    ].join('\n')
+    ]
+    if (item.responseSnapshot?.requestBody) {
+        lines.push(`请求体（脱敏）：\n${item.responseSnapshot.requestBody}`)
+    }
+    const text = lines.join('\n')
     try {
         await copyText(text)
         copiedId.value = item.id
@@ -353,9 +515,13 @@ onMounted(async () => {
 onBeforeUnmount(() => {
     if (unsubscribe) unsubscribe()
     document.body.classList.remove('capture-workspace-open')
+    webviewListenersAttached = false
 })
 
-watch(active, syncWorkspace)
+watch(active, (value) => {
+    if (!value) webviewListenersAttached = false
+    syncWorkspace(value)
+})
 </script>
 
 <style scoped>
@@ -957,8 +1123,38 @@ watch(active, syncWorkspace)
     background: #d70015;
 }
 
+.body-evidence-toggle {
+    min-height: 30px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 0 8px;
+    border: 1px solid #dfe4ea;
+    border-radius: 6px;
+    background: #fff;
+    color: #667085;
+    font: inherit;
+    font-size: 10px;
+    cursor: pointer;
+}
+
+.body-evidence-toggle.active {
+    border-color: #b25000;
+    color: #b25000;
+    background: #fff8e8;
+}
+
 .workspace-close {
     color: #b42318;
+}
+
+.workspace-alert {
+    flex: 0 0 auto;
+    padding: 7px 12px;
+    border-bottom: 1px solid #f0c36d;
+    background: #fff8e8;
+    color: #7a4b00;
+    font-size: 11px;
 }
 
 .browser-host {
@@ -970,12 +1166,127 @@ watch(active, syncWorkspace)
     background: #eef2f6;
     color: #667085;
     font-size: 13px;
+    overflow: hidden;
 }
 
 .embedded-webview {
     width: 100%;
     height: 100%;
     display: flex;
+}
+
+.browser-error {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    flex-direction: column;
+    justify-content: center;
+    padding: 30px;
+    background: #eef2f6;
+    text-align: center;
+}
+
+.browser-error strong {
+    color: #b42318;
+    font-size: 17px;
+}
+
+.browser-error p {
+    max-width: 640px;
+    margin: 8px 0;
+    color: #475467;
+    font-size: 12px;
+}
+
+.browser-error span {
+    max-width: 680px;
+    color: #667085;
+    font-size: 11px;
+    line-height: 1.65;
+}
+
+.browser-error div {
+    display: flex;
+    gap: 8px;
+    margin-top: 15px;
+}
+
+.snapshot-subhead {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.snapshot-subhead strong {
+    font-size: 11px;
+}
+
+.snapshot-subhead span {
+    color: var(--text-dim);
+    font-size: 9px;
+}
+
+.trace-actions {
+    display: flex;
+    gap: 7px;
+    flex-wrap: wrap;
+    margin-top: 10px;
+}
+
+.trace-actions button {
+    padding: 5px 8px;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    background: var(--bg-card);
+    color: var(--primary);
+    font: inherit;
+    font-size: 9px;
+    cursor: pointer;
+}
+
+.trace-template-editor {
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 9px;
+    padding: 10px;
+    border-radius: 6px;
+    background: var(--bg-inset);
+}
+
+.trace-template-editor label {
+    min-width: 260px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.trace-template-editor label span {
+    color: var(--text-dim);
+    font-size: 9px;
+}
+
+.trace-template-editor input {
+    width: 100%;
+    padding: 7px 8px;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    background: var(--bg-card);
+    color: var(--text);
+    font: inherit;
+    font-size: 10px;
+}
+
+.trace-template-editor small {
+    flex-basis: 100%;
+    color: var(--text-dim);
+    font-size: 9px;
 }
 
 @media (max-width: 900px) {

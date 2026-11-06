@@ -184,8 +184,43 @@ if (!hasLock) {
 
     app.on('web-contents-created', (_event, contents) => {
       if (captureService.ownsSession(contents.session)) {
+        contents.on('did-start-loading', () => captureService.noteLoadStart())
+        const noteLoadFailure = (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+          if (isMainFrame === false) return
+          captureService.noteLoadFailure({
+            errorCode,
+            errorDescription,
+            validatedURL
+          })
+        }
+        contents.on('did-fail-load', noteLoadFailure)
+        contents.on('did-fail-provisional-load', noteLoadFailure)
+        contents.on('render-process-gone', (_event, details) =>
+          captureService.noteRenderGone({
+            errorCode: 'render-process-gone',
+            errorDescription: details?.reason || 'unknown'
+          }))
         contents.setWindowOpenHandler(({ url }) => {
-          if (/^https?:\/\//i.test(url)) contents.loadURL(url).catch(() => {})
+          if (!/^https?:\/\//i.test(url)) return { action: 'deny' }
+          const isAuthPopup = /(?:login|sso|oauth|saml|auth|adfs|okta|microsoftonline)/i.test(url)
+          if (isAuthPopup) {
+            return {
+              action: 'allow',
+              overrideBrowserWindowOptions: {
+                width: 760,
+                height: 720,
+                minWidth: 520,
+                minHeight: 520,
+                autoHideMenuBar: true,
+                webPreferences: {
+                  contextIsolation: true,
+                  nodeIntegration: false,
+                  sandbox: true
+                }
+              }
+            }
+          }
+          contents.loadURL(url).catch(() => {})
           return { action: 'deny' }
         })
         return
@@ -225,10 +260,20 @@ if (!hasLock) {
   ipcMain.handle('capture:state', () => captureService.state())
   ipcMain.handle('capture:register-webview', (_event, webContentsId) =>
     captureService.attachResponseInspector(webContentsId))
+  ipcMain.handle('capture:set-options', (_event, options) =>
+    captureService.setCaptureOptions(options))
   ipcMain.handle('capture:set-recording', (_event, enabled) => captureService.setRecording(enabled))
   ipcMain.handle('capture:close', () => captureService.close())
   ipcMain.handle('capture:clear', () => captureService.clear())
   ipcMain.handle('capture:note-action', (_event, payload) => captureService.noteUiAction(payload))
+  ipcMain.handle('external:open', (_event, rawUrl) => {
+    const parsed = new URL(String(rawUrl || ''))
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+      throw new Error('只允许打开 HTTP/HTTPS 地址')
+    }
+    shell.openExternal(parsed.toString())
+    return { ok: true }
+  })
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

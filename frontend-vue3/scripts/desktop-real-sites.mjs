@@ -25,7 +25,7 @@ async function openSite(url) {
 
 const lting = await openSite('http://127.0.0.1:8078/chat/login.html')
 assert.equal(await lting.title(), '用户登录')
-assert.ok(await lting.locator('#loginForm').isVisible())
+await lting.locator('#loginForm').waitFor({ state: 'visible', timeout: 30000 })
 
 await lting.locator('#guestBtn').click()
 await lting.waitForURL(url => !url.pathname.endsWith('/chat/login.html'), { timeout: 30000 })
@@ -44,7 +44,7 @@ await sauce.locator('[data-test="username"]').fill('standard_user')
 await sauce.locator('[data-test="password"]').fill('secret_sauce')
 await sauce.locator('[data-test="login-button"]').click()
 await sauce.waitForURL('**/inventory.html', { timeout: 30000 })
-assert.match(await sauce.locator('body').innerText(), /Products/)
+await sauce.locator('.title', { hasText: 'Products' }).waitFor({ timeout: 30000 })
 await mainPage.evaluate(() => window.faultDetectDesktop.closeCapture())
 
 const publicErrorSite = await openSite('https://the-internet.herokuapp.com/status_codes')
@@ -67,7 +67,7 @@ const publicDetectionBanner = (await mainPage.locator('.status-banner').innerTex
 
 const result = {
     ok: true,
-    version: '1.3.5',
+    version: '1.3.6',
     lting: {
         url: 'http://127.0.0.1:8078/chat/login.html',
         title: '用户登录',
@@ -94,7 +94,7 @@ const result = {
     }
 }
 fs.writeFileSync(
-    path.join(outputDir, 'FaultDetect-Real-Sites-1.3.5.json'),
+    path.join(outputDir, 'FaultDetect-Real-Sites-1.3.6.json'),
     JSON.stringify(result, null, 2),
     'utf8'
 )

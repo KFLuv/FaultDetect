@@ -16,7 +16,15 @@ document.querySelectorAll("[data-endpoint]").forEach(button => {
         ? { ...headers, "Content-Type": "application/json" }
         : headers
     };
-    if (method === "POST") options.body = "{}";
+    if (method === "POST") {
+      options.body = JSON.stringify({
+        action: "submit-approval",
+        password: "demo-secret",
+        mobile: "13800138000",
+        idCard: "440101199001011234",
+        amount: 100
+      });
+    }
     try {
       const response = await fetch(button.dataset.endpoint, options);
       result.textContent = `HTTP ${response.status}\n${await response.text()}`;

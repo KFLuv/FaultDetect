@@ -39,7 +39,10 @@ function usableHeaders(headers) {
 function sanitizeResponseBody(raw) {
   let text = String(raw || '')
   text = text
-    .replace(/((?:"|')?(?:password|passwd|pwd|token|access_token|refresh_token|secret|api[_-]?key)(?:"|')?\s*:\s*)(?:"[^"]*"|'[^']*'|[^,\s}\]]+)/gi, '$1"***"')
+    .replace(/((?:"|')?(?:password|passwd|pwd|token|access_token|refresh_token|secret|api[_-]?key|phone|mobile|id[_-]?card|idcard|身份证|手机号)(?:"|')?\s*:\s*)(?:"[^"]*"|'[^']*'|[^,\s}\]]+)/gi, '$1"***"')
+    .replace(/(^|[&;])((?:password|passwd|pwd|token|access_token|refresh_token|secret|api[_-]?key|phone|mobile|id[_-]?card|idcard|身份证|手机号)=)[^&;]*/gi, '$1$2***')
+    .replace(/(?<!\d)1[3-9]\d{9}(?!\d)/g, '***')
+    .replace(/(?<!\d)\d{17}[\dXx](?!\d)/g, '***')
     .replace(/(Authorization\s*[:=]\s*Bearer\s+)[^\s,;"']+/gi, '$1***')
     .replace(/([?&](?:token|access_token|api_key|key|password|passwd|secret|session|auth)[^=]*=)[^&#\s]*/gi, '$1***')
   const truncated = text.length > MAX_RESPONSE_PREVIEW
@@ -121,6 +124,8 @@ function createCaptureService({ onUpdate }) {
   let sequence = 0
   let requests = []
   let recording = false
+  let captureRequestBody = false
+  let loadError = null
   let lastUiAction = null
   const pendingHeaders = new Map()
   const cdpRequests = new Map()
@@ -134,6 +139,8 @@ function createCaptureService({ onUpdate }) {
       active,
       targetUrl,
       recording,
+      captureRequestBody,
+      loadError,
       requests
     }
   }
@@ -184,6 +191,9 @@ function createCaptureService({ onUpdate }) {
       headers,
       responseBody: sanitized.text,
       responseBodyTruncated: sanitized.truncated,
+      requestBody: request?.requestBody || '',
+      requestBodyTruncated: Boolean(request?.requestBodyTruncated),
+      requestContentType: request?.requestContentType || '',
       traceId: extractTraceId(headers, sanitized.text),
       durationMs: response?.durationMs || null,
       failureLayer: analysis.layer,
@@ -199,11 +209,23 @@ function createCaptureService({ onUpdate }) {
   function handleDebuggerMessage(_event, method, params) {
     if (method === 'Network.requestWillBeSent') {
       if (!recording) return
+      const requestMethod = String(params.request?.method || 'GET').toUpperCase()
+      const requestHeaders = params.request?.headers || {}
+      let requestBody = ''
+      let requestBodyTruncated = false
+      if (captureRequestBody && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(requestMethod)) {
+        const sanitized = sanitizeResponseBody(params.request?.postData || '')
+        requestBody = sanitized.text
+        requestBodyTruncated = sanitized.truncated
+      }
       cdpRequests.set(params.requestId, {
         url: params.request?.url || '',
-        method: String(params.request?.method || 'GET').toUpperCase(),
+        method: requestMethod,
         startedAt: params.timestamp,
-        requestHeaders: params.request?.headers || {}
+        requestHeaders,
+        requestBody,
+        requestBodyTruncated,
+        requestContentType: findHeader(requestHeaders, ['content-type'])
       })
       return
     }
@@ -242,6 +264,9 @@ function createCaptureService({ onUpdate }) {
         headers: {},
         responseBody: '',
         responseBodyTruncated: false,
+        requestBody: request?.requestBody || '',
+        requestBodyTruncated: Boolean(request?.requestBodyTruncated),
+        requestContentType: request?.requestContentType || '',
         traceId: '',
         durationMs: params.timestamp && request.startedAt
           ? Math.round((params.timestamp - request.startedAt) * 1000)
@@ -302,6 +327,24 @@ function createCaptureService({ onUpdate }) {
     const occurredAt = Number(payload?.occurredAt || 0)
     if (!label || !occurredAt) return { ok: true }
     lastUiAction = { label, occurredAt }
+    return { ok: true }
+  }
+
+  function noteLoadStart() {
+    loadError = null
+    publish()
+    return { ok: true }
+  }
+
+  function noteLoadFailure(payload) {
+    loadError = payload || null
+    publish()
+    return { ok: true }
+  }
+
+  function noteRenderGone(payload) {
+    loadError = payload || null
+    publish()
     return { ok: true }
   }
 
@@ -416,6 +459,8 @@ function createCaptureService({ onUpdate }) {
     targetUrl = normalized
     requests = []
     recording = false
+    captureRequestBody = false
+    loadError = null
     lastUiAction = null
     pendingHeaders.clear()
     responseSnapshots.clear()
@@ -438,12 +483,20 @@ function createCaptureService({ onUpdate }) {
     return state()
   }
 
+  function setCaptureOptions(options) {
+    captureRequestBody = Boolean(options?.captureRequestBody)
+    publish()
+    return state()
+  }
+
   async function close() {
     await waitForPendingSnapshots()
     detachResponseInspector()
     active = false
     targetUrl = ''
     recording = false
+    captureRequestBody = false
+    loadError = null
     pendingHeaders.clear()
     publish()
     return { ok: true }
@@ -462,8 +515,12 @@ function createCaptureService({ onUpdate }) {
     clear,
     state,
     setRecording,
+    setCaptureOptions,
     ownsSession,
     noteUiAction,
+    noteLoadStart,
+    noteLoadFailure,
+    noteRenderGone,
     attachResponseInspector
   }
 }

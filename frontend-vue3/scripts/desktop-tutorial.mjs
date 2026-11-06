@@ -16,6 +16,9 @@ if (!mainPage) throw new Error('FaultDetect main desktop page not found')
 
 const pageErrors = []
 mainPage.on('pageerror', error => pageErrors.push(error.message))
+mainPage.on('dialog', async dialog => {
+    await dialog.accept()
+})
 
 await mainPage.locator('.side-nav-item', { hasText: '使用教学' }).click()
 await mainPage.getByRole('heading', { name: '从问题页面到诊断报告' }).waitFor()
@@ -48,6 +51,7 @@ const postCapturePromise = context.waitForEvent('page')
 await mainPage.locator('.demo-url-row', { hasText: '审批中心' }).getByRole('button', { name: '打开' }).click()
 const postCapture = await postCapturePromise
 await postCapture.waitForLoadState('domcontentloaded')
+await mainPage.getByTestId('request-body-toggle').click()
 await mainPage.getByTestId('capture-workspace').getByRole('button', { name: '开始记录本次问题' }).click()
 await postCapture.getByRole('button', { name: /提交审批（失败）/ }).click()
 await postCapture.locator('#result', { hasText: 'HTTP 500' }).waitFor()
@@ -63,6 +67,19 @@ const snapshotText = await mainPage.locator('.snapshot-panel').innerText()
 assert.match(snapshotText, /后端\/上游/)
 assert.match(snapshotText, /DemoServiceException/)
 assert.match(snapshotText, /demo-/)
+assert.match(snapshotText, /脱敏请求体/)
+assert.ok(!snapshotText.includes('demo-secret'))
+assert.ok(!snapshotText.includes('13800138000'))
+assert.ok(!snapshotText.includes('440101199001011234'))
+await mainPage.getByRole('button', { name: '配置日志入口' }).click()
+await mainPage.getByPlaceholder('https://log.example.com/search?traceId={traceId}')
+    .fill('https://logs.example.test/search?traceId={traceId}')
+await mainPage.getByRole('button', { name: '保存模板' }).click()
+assert.equal(
+    await mainPage.evaluate(() => localStorage.getItem('faultdetect-trace-template')),
+    'https://logs.example.test/search?traceId={traceId}'
+)
+assert.equal(await mainPage.getByRole('button', { name: '打开日志平台' }).isVisible(), true)
 await mainPage.locator('.snapshot-panel').getByRole('button', { name: '关闭' }).click()
 await postRow.getByRole('button', { name: '复制交接信息' }).click()
 const clipboard = spawnSync('powershell', ['-NoProfile', '-Command', 'Get-Clipboard -Raw'], {
@@ -70,14 +87,22 @@ const clipboard = spawnSync('powershell', ['-NoProfile', '-Command', 'Get-Clipbo
 })
 assert.match(clipboard.stdout, /提交审批/)
 
+await mainPage.getByPlaceholder('粘贴业务系统地址，例如 https://oa.example.com')
+    .fill('http://127.0.0.1:1/')
+await mainPage.getByRole('button', { name: '打开并开始采集' }).click()
+const browserError = mainPage.getByTestId('browser-error')
+await browserError.waitFor({ timeout: 20000 })
+assert.match(await browserError.innerText(), /连接被拒绝|网页加载失败/)
+await browserError.getByRole('button', { name: '返回地址' }).click()
+
 await mainPage.screenshot({
-    path: path.join(outputDir, 'FaultDetect-Tutorial-1.3.5.png'),
+    path: path.join(outputDir, 'FaultDetect-Tutorial-1.3.6.png'),
     fullPage: true
 })
 
 const result = {
     ok: true,
-    version: '1.3.5',
+    version: '1.3.6',
     tutorial_nav_rendered: true,
     built_in_demo_opened: true,
     get_action_mapped: true,
@@ -87,10 +112,14 @@ const result = {
     native_clipboard_verified: true,
     post_snapshot_verified: true,
     trace_id_verified: true,
+    request_body_evidence_verified: true,
+    request_body_secrets_masked: true,
+    trace_log_template_verified: true,
+    browser_error_degraded: true,
     page_errors: pageErrors
 }
 fs.writeFileSync(
-    path.join(outputDir, 'FaultDetect-Tutorial-1.3.5.json'),
+    path.join(outputDir, 'FaultDetect-Tutorial-1.3.6.json'),
     JSON.stringify(result, null, 2),
     'utf8'
 )
