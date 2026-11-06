@@ -110,7 +110,7 @@
 <script setup>
 import { computed, reactive, ref } from 'vue'
 import { CheckCircle2, SearchCheck } from 'lucide-vue-next'
-import { promoteUnknownCase, store } from '../api'
+import { copyText, promoteUnknownCase, store } from '../api'
 
 const props = defineProps({
     report: { type: Object, required: true }
@@ -166,7 +166,7 @@ function statusLabel(value) {
 
 async function copyHandoff() {
     try {
-        await navigator.clipboard.writeText(handoffText.value)
+        await copyText(handoffText.value)
         alert('研发交接包已复制')
     } catch {
         alert('复制失败，请手动选择交接包文本')

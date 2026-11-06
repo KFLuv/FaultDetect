@@ -14,7 +14,7 @@
                 <span>01</span>
                 <AppWindow :size="20" />
                 <h3>打开业务系统</h3>
-                <p>粘贴系统首页地址。业务系统在 FaultDetect 的独立窗口中打开。</p>
+                <p>粘贴系统首页地址。业务系统直接打开在 FaultDetect 主窗口内。</p>
             </article>
             <article>
                 <span>02</span>
@@ -51,6 +51,30 @@
                 内置教学演示需要在桌面版中打开
             </span>
         </div>
+
+        <section class="demo-urls">
+            <div class="panel-heading">
+                <Copy :size="18" />
+                <div>
+                    <h3>可直接复制的检测地址</h3>
+                    <p>复制后粘贴到“技术人员入口”即可单独检测；也可以打开上面的内置演示页操作。</p>
+                </div>
+            </div>
+            <div class="demo-url-list">
+                <div v-for="item in demoCases" :key="item.url" class="demo-url-row">
+                    <span class="demo-badge" :class="item.tone">{{ item.expectation }}</span>
+                    <div>
+                        <strong>{{ item.name }}</strong>
+                        <code>{{ item.url }}</code>
+                    </div>
+                    <button type="button" class="copy-url" @click="copyDemoUrl(item)">
+                        <Check v-if="copiedUrl === item.url" :size="14" />
+                        <Copy v-else :size="14" />
+                        {{ copiedUrl === item.url ? '已复制' : '复制' }}
+                    </button>
+                </div>
+            </div>
+        </section>
 
         <div class="tutorial-columns">
             <section class="lesson-panel">
@@ -94,6 +118,18 @@
                     <MinusCircle :size="16" />
                     <span>不监听：手机 App 或原生桌面客户端</span>
                 </div>
+                <div class="scope-row">
+                    <CheckCircle2 :size="16" />
+                    <span>URL 自带 token 查询参数时会按原 URL 发送；内置采集还会自动补 Cookie / Authorization。</span>
+                </div>
+                <div class="scope-row limited">
+                    <MinusCircle :size="16" />
+                    <span>手动输入 URL 时，系统不会从你原来的浏览器里自动读取 Cookie。</span>
+                </div>
+                <div class="scope-row">
+                    <CheckCircle2 :size="16" />
+                    <span>未知问题先进入未知场景模式；确认最终根因后，才由用户归档到场景库。</span>
+                </div>
             </section>
         </div>
 
@@ -116,10 +152,13 @@
 </template>
 
 <script setup>
+import { ref } from 'vue'
 import {
     AppWindow,
     BriefcaseBusiness,
     CheckCircle2,
+    Check,
+    Copy,
     GraduationCap,
     Info,
     ListChecks,
@@ -130,9 +169,29 @@ import {
     ScanSearch,
     ShieldCheck
 } from 'lucide-vue-next'
+import { copyText } from '../api'
 
 const emit = defineEmits(['demo-opened'])
 const desktopAvailable = Boolean(window.faultDetectDesktop?.openCapture)
+const origin = window.location.origin
+const copiedUrl = ref('')
+const demoCases = [
+    { name: '正常查询', url: `${origin}/demo/api/ok`, expectation: 'HTTP 200', tone: 'good' },
+    { name: '后端异常', url: `${origin}/demo/api/error`, expectation: 'HTTP 500', tone: 'bad' },
+    { name: '接口不存在', url: `${origin}/demo/api/not-found`, expectation: 'HTTP 404', tone: 'bad' },
+    { name: '登录态失效', url: `${origin}/demo/api/unauthorized`, expectation: 'HTTP 401', tone: 'warn' },
+    { name: '空数据页', url: `${origin}/demo/api/empty`, expectation: 'HTTP 200 · 空数据', tone: 'warn' },
+    { name: '上游不可用', url: `${origin}/demo/api/unavailable`, expectation: 'HTTP 503', tone: 'bad' },
+    { name: '提交审批失败', url: `${origin}/demo/api/post-error`, expectation: 'POST · 不自动重放', tone: 'warn' }
+]
+
+async function copyDemoUrl(item) {
+    await copyText(item.url)
+    copiedUrl.value = item.url
+    setTimeout(() => {
+        if (copiedUrl.value === item.url) copiedUrl.value = ''
+    }, 1600)
+}
 
 async function openDemo() {
     const url = new URL('/demo/capture.html', window.location.origin).toString()
@@ -151,7 +210,8 @@ async function openDemo() {
 .tutorial-lead,
 .demo-panel,
 .lesson-panel,
-.real-system {
+.real-system,
+.demo-urls {
     border: 1px solid var(--border);
     border-radius: 8px;
     background: var(--bg-card);
@@ -262,6 +322,88 @@ async function openDemo() {
     flex: 0 0 auto;
     color: var(--text-dim);
     font-size: 11px;
+}
+
+.demo-urls {
+    padding: 17px;
+}
+
+.demo-url-list {
+    margin-top: 13px;
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    overflow: hidden;
+}
+
+.demo-url-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+}
+
+.demo-url-row:last-child {
+    border-bottom: 0;
+}
+
+.demo-badge {
+    min-width: 86px;
+    padding: 3px 7px;
+    border-radius: 4px;
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-size: 9px;
+    font-weight: 700;
+    text-align: center;
+}
+
+.demo-badge.good {
+    color: var(--success);
+    background: color-mix(in srgb, var(--success) 8%, transparent);
+}
+
+.demo-badge.warn {
+    color: var(--warning);
+    background: color-mix(in srgb, var(--warning) 8%, transparent);
+}
+
+.demo-badge.bad {
+    color: var(--danger);
+    background: color-mix(in srgb, var(--danger) 8%, transparent);
+}
+
+.demo-url-row > div {
+    min-width: 0;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.demo-url-row strong {
+    font-size: 11px;
+}
+
+.demo-url-row code {
+    overflow: hidden;
+    color: var(--text-dim);
+    font-size: 10px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.copy-url {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex: 0 0 auto;
+    padding: 5px 8px;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    background: var(--bg-card);
+    color: var(--primary);
+    font: inherit;
+    font-size: 10px;
+    cursor: pointer;
 }
 
 .tutorial-columns {
@@ -385,6 +527,19 @@ async function openDemo() {
     .flow-grid,
     .check-grid {
         grid-template-columns: 1fr;
+    }
+
+    .demo-url-row {
+        align-items: flex-start;
+        flex-wrap: wrap;
+    }
+
+    .demo-url-row > div {
+        flex-basis: calc(100% - 100px);
+    }
+
+    .copy-url {
+        margin-left: auto;
     }
 }
 </style>

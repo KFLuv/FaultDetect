@@ -84,6 +84,22 @@
         <strong>查询订单（失败）</strong>
         <span>GET /demo/api/error · HTTP 500</span>
       </button>
+      <button type="button" data-demo="not-found">
+        <strong>查询详情（接口不存在）</strong>
+        <span>GET /demo/api/not-found · HTTP 404</span>
+      </button>
+      <button type="button" data-demo="unauthorized">
+        <strong>查询订单（登录失效）</strong>
+        <span>GET /demo/api/unauthorized · HTTP 401</span>
+      </button>
+      <button type="button" data-demo="empty">
+        <strong>查询列表（空数据）</strong>
+        <span>GET /demo/api/empty · HTTP 200 · data=[]</span>
+      </button>
+      <button type="button" data-demo="unavailable">
+        <strong>查询上游（服务不可用）</strong>
+        <span>GET /demo/api/unavailable · HTTP 503</span>
+      </button>
       <button type="button" data-demo="post">
         <strong>提交审批（失败）</strong>
         <span>POST /demo/api/post-error · 不允许自动重放</span>

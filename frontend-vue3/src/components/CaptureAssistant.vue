@@ -52,25 +52,6 @@
 
         <p v-if="errorMessage" class="capture-error">{{ errorMessage }}</p>
 
-        <div v-if="active" class="capture-live" :class="{ recording }">
-            <span class="live-dot"></span>
-            <div>
-                <strong>{{ recording ? '正在记录本次问题' : '采集窗口已打开，当前处于待机' }}</strong>
-                <span>
-                    {{ recording
-                        ? '现在到业务系统里执行一次出错操作，完成后点击“完成采集”。'
-                        : '先登录并操作到目标页面，准备好后再开始记录，避免混入正常请求。' }}
-                </span>
-            </div>
-            <button v-if="!recording" type="button" class="record-action" @click="startRecording">
-                开始记录本次问题
-            </button>
-            <button v-else type="button" class="record-action stop" @click="finishRecording">
-                完成采集
-            </button>
-            <button type="button" class="plain-action" @click="closeBusinessSystem">关闭业务窗口</button>
-        </div>
-
         <div v-if="sortedRequests.length" class="capture-results" data-testid="capture-results">
             <div class="capture-results-head">
                 <div>
@@ -121,23 +102,62 @@
             </div>
         </div>
 
-        <div v-else-if="active" class="capture-empty">
-            <RefreshCw :size="17" />
-            在业务系统里完成一次操作后，最近请求会自动出现在这里。
-        </div>
     </section>
+
+    <Teleport to="body">
+        <div v-if="active" class="capture-workspace" data-testid="capture-workspace">
+            <header class="workspace-toolbar">
+                <div class="workspace-brand">
+                    <span class="workspace-mark"><AppWindow :size="18" /></span>
+                    <div>
+                        <strong>FaultDetect 内置业务系统</strong>
+                        <span :class="{ recording }">{{ recording ? '正在记录本次问题' : '当前待机，不会捕获请求' }}</span>
+                    </div>
+                </div>
+                <div class="workspace-nav">
+                    <button type="button" title="返回上一页" @click="captureCommand('back')">
+                        <ChevronLeft :size="17" />
+                    </button>
+                    <button type="button" title="前进" @click="captureCommand('forward')">
+                        <ChevronRight :size="17" />
+                    </button>
+                    <button type="button" title="刷新页面" @click="captureCommand('reload')">
+                        <RefreshCw :size="16" />
+                    </button>
+                </div>
+                <div class="workspace-actions">
+                    <button v-if="!recording" type="button" class="workspace-record" @click="startRecording">
+                        开始记录本次问题
+                    </button>
+                    <button v-else type="button" class="workspace-record stop" @click="finishRecording">
+                        完成采集
+                    </button>
+                    <button type="button" class="workspace-close" title="关闭内置业务系统" @click="closeBusinessSystem">
+                        <X :size="18" />
+                    </button>
+                </div>
+            </header>
+            <div ref="browserHost" class="browser-host">
+                <span>正在加载业务系统…</span>
+            </div>
+        </div>
+    </Teleport>
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
     AppWindow,
     ArrowRight,
+    ChevronLeft,
+    ChevronRight,
     ExternalLink,
     MousePointerClick,
     RefreshCw,
-    ShieldCheck
+    ShieldCheck,
+    X
 } from 'lucide-vue-next'
+import { copyText } from '../api'
 
 defineEmits(['use-request'])
 defineProps({
@@ -153,7 +173,9 @@ const authorized = ref(false)
 const requests = ref([])
 const errorMessage = ref('')
 const copiedId = ref(0)
+const browserHost = ref(null)
 let unsubscribe = null
+let resizeObserver = null
 
 const sortedRequests = computed(() => [...requests.value].sort((left, right) => {
     if (left.isFailure !== right.isFailure) return left.isFailure ? -1 : 1
@@ -166,6 +188,31 @@ function applyState(state) {
     active.value = Boolean(state.active)
     recording.value = Boolean(state.recording)
     requests.value = Array.isArray(state.requests) ? state.requests : []
+}
+
+function updateCaptureBounds() {
+    if (!active.value || !browserHost.value || !window.faultDetectDesktop?.setCaptureBounds) return
+    const rect = browserHost.value.getBoundingClientRect()
+    window.faultDetectDesktop.setCaptureBounds({
+        x: rect.left,
+        y: rect.top,
+        width: rect.width,
+        height: rect.height
+    })
+}
+
+async function syncWorkspace() {
+    document.body.classList.toggle('capture-workspace-open', active.value)
+    await nextTick()
+    updateCaptureBounds()
+    if (active.value && browserHost.value && !resizeObserver) {
+        resizeObserver = new ResizeObserver(updateCaptureBounds)
+        resizeObserver.observe(browserHost.value)
+    }
+    if (!active.value && resizeObserver) {
+        resizeObserver.disconnect()
+        resizeObserver = null
+    }
 }
 
 function statusLabel(item) {
@@ -195,6 +242,10 @@ async function closeBusinessSystem() {
     await window.faultDetectDesktop.closeCapture()
 }
 
+async function captureCommand(action) {
+    await window.faultDetectDesktop.captureCommand(action)
+}
+
 async function startRecording() {
     errorMessage.value = ''
     try {
@@ -222,13 +273,14 @@ async function clearRequests() {
 async function copyHandoff(item) {
     const observed = item.error || (item.statusCode ? `HTTP ${item.statusCode}` : '请求完成')
     const text = [
+        `操作：${item.actionLabel || '未识别'}`,
         `请求：${item.method} ${item.host}${item.path}`,
         `结果：${observed}`,
         `时间：${new Date(item.capturedAt).toLocaleString()}`,
         '说明：该请求可能提交业务数据，FaultDetect 未自动重放，请研发按服务端日志核查。'
     ].join('\n')
     try {
-        await navigator.clipboard.writeText(text)
+        await copyText(text)
         copiedId.value = item.id
         setTimeout(() => {
             if (copiedId.value === item.id) copiedId.value = 0
@@ -246,11 +298,17 @@ onMounted(async () => {
     } catch (error) {
         errorMessage.value = '读取采集状态失败：' + (error.message || String(error))
     }
+    window.addEventListener('resize', updateCaptureBounds)
 })
 
 onBeforeUnmount(() => {
     if (unsubscribe) unsubscribe()
+    window.removeEventListener('resize', updateCaptureBounds)
+    if (resizeObserver) resizeObserver.disconnect()
+    document.body.classList.remove('capture-workspace-open')
 })
+
+watch(active, syncWorkspace, { flush: 'post' })
 </script>
 
 <style scoped>
@@ -645,6 +703,128 @@ onBeforeUnmount(() => {
     font-size: 11px;
 }
 
+:global(body.capture-workspace-open) {
+    overflow: hidden;
+}
+
+.capture-workspace {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    background: #eef2f6;
+}
+
+.workspace-toolbar {
+    height: 64px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex: 0 0 64px;
+    padding: 0 14px;
+    border-bottom: 1px solid #dfe4ea;
+    background: #fff;
+    color: #172033;
+}
+
+.workspace-brand {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    flex: 1;
+}
+
+.workspace-mark {
+    width: 32px;
+    height: 32px;
+    display: grid;
+    place-items: center;
+    flex: 0 0 32px;
+    border-radius: 7px;
+    color: #fff;
+    background: #1e2838;
+}
+
+.workspace-brand div {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.workspace-brand strong {
+    font-size: 13px;
+}
+
+.workspace-brand span:last-child {
+    color: #667085;
+    font-size: 10px;
+}
+
+.workspace-brand span:last-child.recording {
+    color: #d70015;
+}
+
+.workspace-nav,
+.workspace-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.workspace-nav button,
+.workspace-close {
+    width: 30px;
+    height: 30px;
+    display: grid;
+    place-items: center;
+    border: 1px solid #dfe4ea;
+    border-radius: 6px;
+    background: #fff;
+    color: #475467;
+    cursor: pointer;
+}
+
+.workspace-nav button:hover,
+.workspace-close:hover {
+    border-color: #0071e3;
+    color: #0071e3;
+}
+
+.workspace-record {
+    min-height: 32px;
+    padding: 0 12px;
+    border: 1px solid #0071e3;
+    border-radius: 6px;
+    background: #0071e3;
+    color: #fff;
+    font: inherit;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.workspace-record.stop {
+    border-color: #d70015;
+    background: #d70015;
+}
+
+.workspace-close {
+    color: #b42318;
+}
+
+.browser-host {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    place-items: center;
+    background: #eef2f6;
+    color: #667085;
+    font-size: 13px;
+}
+
 @media (max-width: 900px) {
     .capture-head,
     .capture-launch {
@@ -661,6 +841,19 @@ onBeforeUnmount(() => {
     }
 
     .capture-steps > svg {
+        display: none;
+    }
+
+    .workspace-toolbar {
+        gap: 8px;
+        padding: 0 9px;
+    }
+
+    .workspace-brand span:last-child {
+        display: none;
+    }
+
+    .workspace-nav {
         display: none;
     }
 

@@ -1,4 +1,4 @@
-const { BrowserWindow, Menu, session } = require('electron')
+const { WebContentsView, session } = require('electron')
 const path = require('path')
 
 const CAPTURE_PARTITION = 'faultdetect-capture-session'
@@ -16,16 +16,6 @@ function normalizeSiteUrl(value) {
   }
 }
 
-function safeDisplayUrl(raw) {
-  try {
-    const parsed = new URL(raw)
-    const path = parsed.pathname.length > 150 ? parsed.pathname.slice(0, 147) + '...' : parsed.pathname
-    return parsed.origin + path
-  } catch {
-    return '目标地址'
-  }
-}
-
 function usableHeaders(headers) {
   const result = {}
   for (const [rawName, rawValue] of Object.entries(headers || {})) {
@@ -39,22 +29,23 @@ function usableHeaders(headers) {
   return result
 }
 
-function createCaptureService({ onUpdate }) {
+function createCaptureService({ onUpdate, getMainWindow }) {
   let captureSession = null
+  let captureView = null
   let sequence = 0
   let requests = []
   let recording = false
   let lastUiAction = null
+  let viewBounds = { x: 0, y: 72, width: 1200, height: 800 }
   const pendingHeaders = new Map()
 
-  function captureWindows() {
-    if (!captureSession) return []
-    return BrowserWindow.getAllWindows().filter(window => window.webContents.session === captureSession)
+  function active() {
+    return Boolean(captureView && !captureView.webContents.isDestroyed())
   }
 
   function state() {
     return {
-      active: captureWindows().length > 0,
+      active: active(),
       recording,
       requests
     }
@@ -79,24 +70,6 @@ function createCaptureService({ onUpdate }) {
     lastUiAction = { label, occurredAt }
   }
 
-  function allowWindowOpen(url) {
-    return /^https?:\/\//i.test(url)
-      ? {
-          action: 'allow',
-          overrideBrowserWindowOptions: {
-            minWidth: 720,
-            minHeight: 560,
-            autoHideMenuBar: true,
-            webPreferences: {
-              contextIsolation: true,
-              nodeIntegration: false,
-              sandbox: true
-            }
-          }
-        }
-      : { action: 'deny' }
-  }
-
   function addRequest(details, errorMessage) {
     const method = String(details.method || 'GET').toUpperCase()
     const resourceType = String(details.resourceType || '')
@@ -113,6 +86,7 @@ function createCaptureService({ onUpdate }) {
       && ['127.0.0.1', 'localhost'].includes(parsed.hostname)
       && parsed.port === '8000'
     if (isFaultDetectLocal && !parsed.pathname.startsWith('/demo/')) return
+
     const dedupeKey = `${method} ${details.url}`
     const actionLabel = lastUiAction && Date.now() - lastUiAction.occurredAt <= 30000
       ? lastUiAction.label
@@ -122,7 +96,6 @@ function createCaptureService({ onUpdate }) {
       key: dedupeKey,
       method,
       url: details.url,
-      displayUrl: safeDisplayUrl(details.url),
       host: parsed?.host || '',
       path: parsed?.pathname || '/',
       statusCode: statusCode || null,
@@ -187,53 +160,40 @@ function createCaptureService({ onUpdate }) {
     return captureSession
   }
 
-  function buildMenu() {
-    const activeWindow = () => BrowserWindow.getFocusedWindow() || captureWindows()[0]
-    return Menu.buildFromTemplate([
-      {
-        label: '采集',
-        submenu: [
-          {
-            label: recording ? '完成本次采集并返回' : '开始记录本次问题',
-            accelerator: 'F8',
-            click: () => {
-              if (recording) {
-                setRecording(false)
-                close()
-              } else {
-                setRecording(true)
-              }
-            }
-          },
-          { type: 'separator' },
-          {
-            label: '返回上一页',
-            accelerator: 'Alt+Left',
-            click: () => activeWindow()?.webContents.canGoBack() && activeWindow().webContents.goBack()
-          },
-          {
-            label: '前进',
-            accelerator: 'Alt+Right',
-            click: () => activeWindow()?.webContents.canGoForward() && activeWindow().webContents.goForward()
-          },
-          {
-            label: '刷新',
-            accelerator: 'F5',
-            click: () => activeWindow()?.webContents.reload()
-          },
-          { type: 'separator' },
-          { label: '关闭采集窗口', accelerator: 'Ctrl+W', click: close }
-        ]
-      }
-    ])
+  function setBounds(bounds) {
+    const next = {
+      x: Math.max(0, Math.round(Number(bounds?.x) || 0)),
+      y: Math.max(0, Math.round(Number(bounds?.y) || 0)),
+      width: Math.max(1, Math.round(Number(bounds?.width) || 1)),
+      height: Math.max(1, Math.round(Number(bounds?.height) || 1))
+    }
+    viewBounds = next
+    if (active()) captureView.setBounds(next)
+    return { ok: true }
   }
 
-  function updateWindowChrome() {
-    for (const window of captureWindows()) {
-      if (window.isDestroyed()) continue
-      window.setTitle(recording ? '● 正在记录本次问题 · FaultDetect' : '待开始记录 · FaultDetect')
-      if (window === BrowserWindow.getFocusedWindow()) window.setMenu(buildMenu())
+  function attachView(targetUrl) {
+    const window = getMainWindow()
+    if (!window || window.isDestroyed()) {
+      return { ok: false, error: 'FaultDetect 主窗口不可用' }
     }
+    captureView = new WebContentsView({
+      webPreferences: {
+        preload: path.join(__dirname, 'capture-preload.js'),
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+        partition: CAPTURE_PARTITION
+      }
+    })
+    captureView.setBackgroundColor('#ffffff')
+    captureView.setBounds(viewBounds)
+    window.contentView.addChildView(captureView)
+    captureView.webContents.loadURL(targetUrl).catch(error => {
+      publish()
+      console.error('capture view load failed', error)
+    })
+    return { ok: true }
   }
 
   function setRecording(enabled) {
@@ -244,9 +204,8 @@ function createCaptureService({ onUpdate }) {
       lastUiAction = null
     }
     recording = next
-    updateWindowChrome()
     publish()
-    if (recording) captureWindows()[0]?.focus()
+    if (recording && active()) captureView.webContents.focus()
     return state()
   }
 
@@ -255,13 +214,9 @@ function createCaptureService({ onUpdate }) {
     if (!targetUrl) {
       return { ok: false, error: '请输入有效的业务系统地址，例如 https://oa.example.com' }
     }
-
     ensureSession()
-    const existing = captureWindows()[0]
-    if (existing && !existing.isDestroyed()) {
-      existing.show()
-      existing.focus()
-      existing.loadURL(targetUrl).catch(() => {})
+    if (active()) {
+      captureView.webContents.loadURL(targetUrl).catch(() => {})
       return { ok: true }
     }
 
@@ -269,43 +224,37 @@ function createCaptureService({ onUpdate }) {
     recording = false
     lastUiAction = null
     pendingHeaders.clear()
-    const window = new BrowserWindow({
-      width: 1280,
-      height: 860,
-      minWidth: 900,
-      minHeight: 640,
-      title: 'FaultDetect · 业务系统采集窗口',
-      backgroundColor: '#f3f4f6',
-      autoHideMenuBar: false,
-      webPreferences: {
-        preload: path.join(__dirname, 'capture-preload.js'),
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: true,
-        partition: CAPTURE_PARTITION
-      }
-    })
-    window.setMenu(buildMenu())
-    window.webContents.on('page-title-updated', event => event.preventDefault())
-    window.on('focus', updateWindowChrome)
-    window.on('closed', () => {
-      recording = false
-      pendingHeaders.clear()
-      publish()
-    })
-    window.loadURL(targetUrl).catch(error => {
-      if (!window.isDestroyed()) {
-        window.setTitle(`无法打开业务系统：${error.message || '加载失败'}`)
-      }
-    })
+    const result = attachView(targetUrl)
+    publish()
+    return result
+  }
+
+  function close() {
+    const window = getMainWindow()
+    if (captureView && !captureView.webContents.isDestroyed()) {
+      if (window && !window.isDestroyed()) window.contentView.removeChildView(captureView)
+      captureView.webContents.close()
+    }
+    captureView = null
+    recording = false
+    pendingHeaders.clear()
     publish()
     return { ok: true }
   }
 
-  function close() {
-    for (const window of captureWindows()) {
-      if (!window.isDestroyed()) window.close()
+  function command(action) {
+    if (!active()) return { ok: false }
+    if (action === 'back' && captureView.webContents.canGoBack()) captureView.webContents.goBack()
+    if (action === 'forward' && captureView.webContents.canGoForward()) captureView.webContents.goForward()
+    if (action === 'reload') captureView.webContents.reload()
+    return { ok: true }
+  }
+
+  function handleWindowOpen(url) {
+    if (active() && /^https?:\/\//i.test(url)) {
+      captureView.webContents.loadURL(url).catch(() => {})
     }
+    return { action: 'deny' }
   }
 
   function clear() {
@@ -320,11 +269,13 @@ function createCaptureService({ onUpdate }) {
     close,
     clear,
     state,
+    setBounds,
     setRecording,
+    command,
     ownsSession,
     ownsContents,
     noteUiAction,
-    allowWindowOpen
+    handleWindowOpen
   }
 }
 

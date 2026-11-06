@@ -27,19 +27,43 @@ public class DemoController {
 
     @GetMapping(value = "/demo/api/error", produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<Map<String, Object>> error() {
-        return failure();
+        return failure(500, "DemoServiceException: 模拟订单查询失败");
+    }
+
+    @GetMapping(value = "/demo/api/not-found", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<Map<String, Object>> notFound() {
+        return failure(404, "DemoRouteNotFound: 模拟接口不存在");
+    }
+
+    @GetMapping(value = "/demo/api/unauthorized", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<Map<String, Object>> unauthorized() {
+        return failure(401, "DemoTokenExpired: 模拟登录态过期");
+    }
+
+    @GetMapping(value = "/demo/api/unavailable", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<Map<String, Object>> unavailable() {
+        return failure(503, "DemoUpstreamUnavailable: 模拟上游服务不可用");
+    }
+
+    @GetMapping(value = "/demo/api/empty", produces = MediaType.APPLICATION_JSON_VALUE)
+    public Map<String, Object> empty() {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("code", 0);
+        result.put("message", "查询成功但数据为空");
+        result.put("data", new Object[0]);
+        return result;
     }
 
     @PostMapping(value = "/demo/api/post-error", produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<Map<String, Object>> postError() {
-        return failure();
+        return failure(500, "DemoServiceException: 模拟审批提交失败");
     }
 
-    private ResponseEntity<Map<String, Object>> failure() {
+    private ResponseEntity<Map<String, Object>> failure(int status, String message) {
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("code", 500);
-        result.put("message", "DemoServiceException: 模拟订单查询失败");
-        return ResponseEntity.status(500)
+        result.put("code", status);
+        result.put("message", message);
+        return ResponseEntity.status(status)
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(result);
     }

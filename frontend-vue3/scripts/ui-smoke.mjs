@@ -54,6 +54,27 @@ try {
     })
 
     await page.goto(baseUrl, { waitUntil: 'networkidle' })
+    const demoStatuses = {}
+    for (const demoPath of [
+        '/demo/api/ok',
+        '/demo/api/error',
+        '/demo/api/not-found',
+        '/demo/api/unauthorized',
+        '/demo/api/empty',
+        '/demo/api/unavailable'
+    ]) {
+        demoStatuses[demoPath] = (await fetch(baseUrl + demoPath)).status
+    }
+    demoStatuses['/demo/api/post-error'] = (await fetch(baseUrl + '/demo/api/post-error', { method: 'POST' })).status
+    assert.deepEqual(demoStatuses, {
+        '/demo/api/ok': 200,
+        '/demo/api/error': 500,
+        '/demo/api/not-found': 404,
+        '/demo/api/unauthorized': 401,
+        '/demo/api/empty': 200,
+        '/demo/api/unavailable': 503,
+        '/demo/api/post-error': 500
+    })
     assert.equal(await page.locator('.side-nav-item').count(), 7)
     assert.equal(await page.locator('.tab-nav').count(), 0)
     assert.equal(await page.getByTestId('capture-assistant').count(), 1)
@@ -85,6 +106,12 @@ try {
         await page.locator('.page-heading h1', { hasText: heading }).waitFor()
     }
 
+    await page.locator('.side-nav-item', { hasText: '使用教学' }).click()
+    assert.equal(await page.locator('.demo-url-row').count(), 7)
+    await page.locator('.demo-url-row').first().getByRole('button', { name: '复制' }).click()
+    await page.waitForTimeout(200)
+    assert.match(await page.evaluate(() => navigator.clipboard.readText()), /\/demo\/api\/ok$/)
+
     await page.locator('.side-nav-item', { hasText: '故障检测' }).click()
     await page.getByTestId('manual-toggle').click()
     const targetUrl = 'http://127.0.0.1:18080/error?token=UI_SECRET&x=1'
@@ -94,6 +121,9 @@ try {
     await page.getByRole('button', { name: /开始检测/ }).click()
     await page.locator('.status-banner').waitFor({ timeout: 30000 })
     assert.equal(await page.locator('.llm-card').count(), 0)
+    await page.getByRole('button', { name: '查看完整诊断过程' }).click()
+    await page.getByRole('heading', { name: /检测流程/ }).waitFor()
+    await page.getByRole('button', { name: '收起完整诊断过程' }).click()
 
     const banner = await page.locator('.status-banner').innerText()
     const match = banner.match(/RPT_[0-9]+/)
@@ -163,6 +193,8 @@ try {
     assert.equal(await page.locator('.unknown-panel .layer-row').count(), 7)
     assert.ok(await page.locator('.unknown-panel .experiment-item').count() >= 1)
     await page.locator('.unknown-panel').getByRole('button', { name: '复制交接包' }).click()
+    await page.locator('.result-toolbar .clear-result').click()
+    assert.equal(await page.locator('.status-banner').count(), 0)
 
     await page.locator('.side-nav-item', { hasText: '新增场景' }).click()
     await page.locator('input[placeholder="例如：短信服务欠费"]').fill('UI 测试自定义场景')
@@ -230,6 +262,10 @@ try {
         llm_disabled_rules_only: true,
         unknown_mode_rendered: true,
         unknown_layers: 7,
+        tutorial_demo_urls: 7,
+        tutorial_demo_statuses: demoStatuses,
+        advanced_diagnostics_collapsed_by_default: true,
+        clear_result_verified: true,
         custom_scenario_preflight_warned: true,
         custom_scenario_preflight_matched: true,
         capture_browser_fallback_rendered: true,

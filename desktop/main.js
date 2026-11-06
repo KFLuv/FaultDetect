@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, session, shell } = require('electron')
+const { app, BrowserWindow, clipboard, dialog, ipcMain, session, shell } = require('electron')
 const { spawn } = require('child_process')
 const fs = require('fs')
 const http = require('http')
@@ -142,7 +142,10 @@ function createWindow() {
 
   mainWindow.once('ready-to-show', () => mainWindow.show())
   mainWindow.loadURL(BASE_URL)
-  mainWindow.on('closed', () => { mainWindow = null })
+  mainWindow.on('closed', () => {
+    captureService?.close()
+    mainWindow = null
+  })
 }
 
 function publishCaptureState(state) {
@@ -162,14 +165,17 @@ if (!hasLock) {
   })
 
   app.whenReady().then(async () => {
-    captureService = createCaptureService({ onUpdate: publishCaptureState })
+    captureService = createCaptureService({
+      onUpdate: publishCaptureState,
+      getMainWindow: () => mainWindow
+    })
     session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
       callback(permission === 'geolocation')
     })
 
     app.on('web-contents-created', (_event, contents) => {
       if (captureService.ownsSession(contents.session)) {
-        contents.setWindowOpenHandler(({ url }) => captureService.allowWindowOpen(url))
+        contents.setWindowOpenHandler(({ url }) => captureService.handleWindowOpen(url))
         return
       }
       contents.setWindowOpenHandler(({ url }) => {
@@ -199,9 +205,15 @@ if (!hasLock) {
   })
 
   ipcMain.handle('backend:restart', () => restartBackend())
+  ipcMain.handle('clipboard:write', (_event, text) => {
+    clipboard.writeText(String(text || ''))
+    return { ok: true }
+  })
   ipcMain.handle('capture:open', (_event, startUrl) => captureService.open(startUrl))
   ipcMain.handle('capture:state', () => captureService.state())
+  ipcMain.handle('capture:set-bounds', (_event, bounds) => captureService.setBounds(bounds))
   ipcMain.handle('capture:set-recording', (_event, enabled) => captureService.setRecording(enabled))
+  ipcMain.handle('capture:command', (_event, action) => captureService.command(action))
   ipcMain.handle('capture:close', () => {
     captureService.close()
     return { ok: true }

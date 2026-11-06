@@ -1,10 +1,11 @@
 {
   "ok": true,
-  "version": "1.3.2",
+  "version": "1.3.3",
   "tutorial_nav_rendered": true,
   "built_in_demo_opened": true,
   "get_action_mapped": true,
   "get_detected_status": 500,
   "post_replay_blocked": true,
+  "native_clipboard_verified": true,
   "page_errors": []
 }

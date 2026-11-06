@@ -37,7 +37,7 @@
                         我确认已获得目标系统的诊断授权
                     </label>
                     <label class="checkbox"><input type="checkbox" v-model="form.serviceCheck"> 服务存活检测（TCP）</label>
-                    <label class="checkbox"><input type="checkbox" v-model="form.contrastCheck"> 🔬 差分隔离实验（对照推导）</label>
+                    <label class="checkbox"><input type="checkbox" v-model="form.contrastCheck"> 🔬 差分隔离实验（高级，默认关闭）</label>
                     <p class="hint" style="margin:4px 0 0;font-size:12px;">
                         开启后会对同一 URL 追加<b>最多 7 次只读</b>对照请求（<span class="mono">GET</span> / <span class="mono">HEAD</span>），
                         每次只改变一个变量，用对照组之间的差异反推故障层次。<b>不会发送任何写请求</b>。
@@ -103,7 +103,7 @@
         <!-- ============ 加载中 ============ -->
         <div v-if="loading" class="loading">
             <div class="spinner"></div>
-            <p>正在执行检测流程（含差分对照与假设推理{{ form.llmCheck ? '，并等待 LLM 增强分析' : '' }}）...</p>
+            <p>正在执行检测流程{{ form.contrastCheck ? '（含差分对照）' : '' }}{{ form.llmCheck ? '，并等待 LLM 增强分析' : '' }}...</p>
         </div>
 
         <!-- ============ 检测结果 ============ -->
@@ -121,18 +121,31 @@
                 @promoted="$emit('changed')"
             />
 
-            <div class="card">
+            <div class="result-toolbar">
+                <div>
+                    <strong>简明结果</strong>
+                    <span>默认只显示结论、解决建议和汇报文本，完整证据分析按需展开。</span>
+                </div>
+                <button type="button" class="btn btn-ghost" @click="advancedOpen = !advancedOpen">
+                    {{ advancedOpen ? '收起完整诊断过程' : '查看完整诊断过程' }}
+                </button>
+                <button type="button" class="btn btn-ghost clear-result" @click="clearResult">
+                    清除本次结果
+                </button>
+            </div>
+
+            <div v-if="advancedOpen" class="card">
                 <h2>⏱️ 检测流程（{{ stepRangeText }}）</h2>
                 <div v-html="timelineHtml"></div>
             </div>
 
-            <div class="card">
+            <div v-if="advancedOpen" class="card">
                 <h2>📸 证据链</h2>
                 <div v-html="evidenceHtml"></div>
             </div>
 
             <!-- ============ 差分隔离实验（P1） ============ -->
-            <div v-if="hasContrast" class="card contrast-card">
+            <div v-if="advancedOpen && hasContrast" class="card contrast-card">
                 <h2>🔬 差分隔离实验（对照推导，不靠状态码查表）</h2>
                 <p class="hint">
                     对同一 URL 每次只改变一个变量并重放，用<b>对照组之间的差异</b>反推故障所在层次。
@@ -142,7 +155,7 @@
             </div>
 
             <!-- ============ 通用假设推理（P2） ============ -->
-            <div v-if="hasHypotheses" class="card hypo-card">
+            <div v-if="advancedOpen && hasHypotheses" class="card hypo-card">
                 <h2>🧠 通用假设推理（多假设排序，不靠状态码查表）</h2>
                 <p class="hint">
                     把本次观测到的事实（状态码 / 响应关键信息 / 异常类名 / 差分结果）喂给<b>通用技术规则库</b>，
@@ -153,7 +166,7 @@
             </div>
 
             <!-- ============ 可选 LLM 增强层（P3） ============ -->
-            <div v-if="hasLlm" class="card llm-card">
+            <div v-if="advancedOpen && hasLlm" class="card llm-card">
                 <h2>🤖 LLM 增强分析（可选层，默认关闭）</h2>
                 <p class="hint">
                     <b>补充层</b>，不替代上面的差分推导与通用规则结论。只有当通用规则、差分推导、知识库三条路径
@@ -182,11 +195,12 @@
                     <button class="btn btn-primary" @click="copyReport">📋 复制汇报文本</button>
                     <button class="btn btn-ghost" @click="downloadReport('json')">下载 JSON</button>
                     <button class="btn btn-ghost" @click="downloadReport('markdown')">下载 Markdown</button>
+                    <button class="btn btn-ghost clear-result" @click="clearResult">清除本次结果</button>
                 </div>
             </div>
 
             <!-- ============ 动态教学：对应本次故障 ============ -->
-            <div class="card teach-dyn-card">
+            <div v-if="advancedOpen" class="card teach-dyn-card">
                 <h2>📖 本次故障 · 手动排查教学</h2>
                 <p class="hint">
                     系统已自动帮你完成排查，下面按本次故障（状态码 + 归属）展示<b>手动版</b>应该怎么做——
@@ -221,7 +235,7 @@
 <script setup>
 import { ref, reactive, computed, watch } from 'vue'
 import { ChevronDown, Wrench } from 'lucide-vue-next'
-import { api, esc, catColor, catLabel } from '../api'
+import { api, copyText, esc, catColor, catLabel } from '../api'
 import { pickStatusTeach, pickCategoryTeach } from '../teaching-data'
 import TeachingTab from './TeachingTab.vue'
 import UnknownCasePanel from './UnknownCasePanel.vue'
@@ -236,7 +250,7 @@ const form = reactive({
     symptom: '',
     authorizedTarget: false,
     serviceCheck: true,
-    contrastCheck: true,
+    contrastCheck: false,
     llmCheck: false,
     timeout: '10',
     cookieVal: '',
@@ -250,6 +264,7 @@ const loading = ref(false)
 const report = ref(null)
 const reportEl = ref(null)
 const manualOpen = ref(false)
+const advancedOpen = ref(false)
 
 watch(() => props.preset, (value) => {
     if (!value) return
@@ -309,6 +324,7 @@ function detect() {
         }),
     }).then((data) => {
         report.value = data
+        advancedOpen.value = false
         emit('changed')
     }).catch((e) => {
         alert('检测失败：' + e.message)
@@ -585,7 +601,7 @@ const catCard = computed(() => (report.value ? pickCategoryTeach((report.value.c
 async function copyReport() {
     if (!reportText.value) { alert('暂无汇报内容'); return }
     try {
-        await navigator.clipboard.writeText(reportText.value)
+        await copyText(reportText.value)
         alert('汇报文本已复制到剪贴板')
     } catch (e) {
         const range = document.createRange()
@@ -621,9 +637,15 @@ function clear() {
     form.authScheme = ''
     form.authSchemeCustom = ''
     form.extraHeaders = {}
-    form.contrastCheck = true
+    form.contrastCheck = false
     form.llmCheck = false
     report.value = null
+    advancedOpen.value = false
+}
+
+function clearResult() {
+    report.value = null
+    advancedOpen.value = false
 }
 </script>
 
@@ -682,6 +704,41 @@ function clear() {
     transform: rotate(180deg);
 }
 
+.result-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 11px 13px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg-card);
+}
+
+.result-toolbar > div {
+    min-width: 0;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.result-toolbar strong {
+    font-size: 12px;
+}
+
+.result-toolbar span {
+    color: var(--text-dim);
+    font-size: 10px;
+}
+
+.result-toolbar .btn {
+    flex: 0 0 auto;
+}
+
+.clear-result {
+    color: var(--danger);
+    border-color: color-mix(in srgb, var(--danger) 25%, var(--border));
+}
+
 /* 动态教学卡 */
 .teach-dyn-card .hint { font-size: 13px; color: var(--text-dim); margin-bottom: 12px; }
 .teach-dyn {
@@ -706,6 +763,13 @@ function clear() {
     border: 1px dashed var(--border);
     border-radius: 8px;
     transition: background 0.2s;
+}
+
+@media (max-width: 720px) {
+    .result-toolbar {
+        align-items: stretch;
+        flex-direction: column;
+    }
 }
 .teach-toggle:hover { background: var(--bg-inset); }
 .teach-full { margin-top: 12px; }

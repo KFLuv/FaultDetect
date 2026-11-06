@@ -31,10 +31,11 @@ const capturePage = await capturePagePromise
 await capturePage.waitForLoadState('domcontentloaded')
 assert.match(capturePage.url(), /\/capture-test$/)
 
-await mainPage.getByRole('button', { name: '开始记录本次问题' }).click()
+await mainPage.getByTestId('capture-workspace').getByRole('button', { name: '开始记录本次问题' }).click()
 await mainPage.waitForTimeout(300)
 await capturePage.getByRole('button', { name: '执行订单查询' }).click()
 await capturePage.locator('#result', { hasText: 'HTTP 500' }).waitFor()
+await mainPage.getByTestId('capture-workspace').getByRole('button', { name: '完成采集' }).click()
 
 const candidate = mainPage.getByTestId('capture-candidate').first()
 await candidate.waitFor({ timeout: 15000 })
@@ -47,15 +48,6 @@ assert.match(panelText, /执行订单查询/)
 assert.ok(!panelText.includes('/ok'))
 assert.ok(!panelText.includes('capture-test-token'))
 assert.ok(!panelText.includes('capture-cookie'))
-
-await mainPage.screenshot({
-    path: path.join(outputDir, 'FaultDetect-Capture-Assistant-1.3.2.png'),
-    fullPage: true
-})
-await capturePage.screenshot({
-    path: path.join(outputDir, 'FaultDetect-Capture-Window-1.3.2.png'),
-    fullPage: true
-})
 
 await mainPage.locator('.capture-authorization input').check()
 const detectResponsePromise = mainPage.waitForResponse(response =>
@@ -84,7 +76,7 @@ assert.deepEqual(pageErrors, [])
 
 const result = {
     ok: true,
-    version: '1.3.2',
+    version: '1.3.3',
     capture_url: capturePage.url(),
     captured_method: 'GET',
     captured_status: 500,
@@ -101,7 +93,7 @@ const result = {
     page_errors: pageErrors
 }
 fs.writeFileSync(
-    path.join(outputDir, 'FaultDetect-Capture-Assistant-1.3.2.json'),
+    path.join(outputDir, 'FaultDetect-Capture-Assistant-1.3.3.json'),
     JSON.stringify(result, null, 2),
     'utf8'
 )

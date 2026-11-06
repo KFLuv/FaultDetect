@@ -73,6 +73,15 @@ export async function api(url, options) {
     return resp.json();
 }
 
+export async function copyText(text) {
+    if (window.faultDetectDesktop?.copyText) {
+        const result = await window.faultDetectDesktop.copyText(text)
+        if (!result?.ok) throw new Error("桌面剪贴板写入失败")
+        return
+    }
+    await navigator.clipboard.writeText(text)
+}
+
 export function esc(s) {
     return String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({
         "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",

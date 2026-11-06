@@ -21,11 +21,14 @@ FaultDetect 是一个以**可复现、可审计、只读安全**为约束的排�
 - 完整诊断链路返回状态码、检测步骤、差分实验、假设、证据、报告和历史记录。
 - 无效 URL 返回 400，不会让服务崩溃。
 - 桌面版包含内嵌 JRE，目标机器无需安装 Java。
-- `FaultDetect-1.3.2-portable.exe` 已通过 Electron 桌面窗口启动验证，不再调用系统浏览器。
+- `FaultDetect-1.3.3-portable.exe` 已通过 Electron 桌面窗口启动验证，不再调用系统浏览器。
 - 本地后端被终止后，桌面端可以自动重启并重试当前检测请求，不再直接显示 `fail to fetch`。
 - 业务人员可以在应用内打开目标业务系统，点击“开始记录本次问题”后自动采集请求，不需要使用 F12。
 - 采集窗口默认待机，只有本次问题记录期间的请求会进入候选列表；正常浏览不会混入。
 - 左侧“使用教学”页提供内置模拟业务系统，可以直接演练正常请求、失败请求和提交类请求。
+- 业务系统直接显示在 FaultDetect 主窗口内，不再单独弹出采集窗口。
+- 汇报文本、研发交接包和请求交接信息使用 Electron 原生剪贴板。
+- 检测结果默认只显示结论、建议和汇报，完整诊断流程按需展开，并可清除本次结果。
 - “新增场景”支持保存前验证，展示是否会命中、当前最强对照场景和需要补充的区分特征。
 - 后端只监听 `127.0.0.1`，API 还会再次校验回环地址。
 - 每次检测必须确认已获得目标系统授权。
@@ -49,6 +52,11 @@ FaultDetect 是一个以**可复现、可审计、只读安全**为约束的排�
 5. 完成采集后选择失败请求，确认授权并执行只读检测。
 
 内置采集只监听 FaultDetect 自己的业务系统窗口，不会监听原来的 Chrome / Edge 页面，也不会监听手机或桌面原生 App。后两类场景分别需要浏览器扩展或 SDK / 代理接入。
+
+- 内置采集会自动带入业务请求里的 Cookie、Authorization 和自定义认证头。
+- URL 自身包含 token 查询参数时会按原 URL 发送，但常见敏感参数会进入历史前脱敏。
+- 手动输入 URL 时，系统不会从用户原来的浏览器中自动读取 Cookie。
+- 未知问题先进入未知场景模式；只有用户确认最终根因和解决动作后，才会归档到自定义场景库。
 
 ## 密钥边界与核对
 
@@ -172,15 +180,15 @@ LLM 默认关闭。未配置、网络不可达、超时或返回格式异常时�
 
 ### 桌面 EXE
 
-双击 `FaultDetect-1.3.2-portable.exe`。程序会在 Electron 桌面窗口中直接打开界面，自动启动内置 JRE 和本地后端，不依赖系统浏览器。
+双击 `FaultDetect-1.3.3-portable.exe`。程序会在 Electron 桌面窗口中直接打开界面，自动启动内置 JRE 和本地后端，不依赖系统浏览器。
 
 目标机器无需安装 Java、Node.js 或浏览器。业务数据默认保存在 `%LOCALAPPDATA%\FaultDetectSystem\data\`。
 
 GitHub Release 包：
 
-- 大小：166,999,369 bytes
-- SHA-256：`AA9D869273475913526F591A8EC9E84D3859C03E49190DD0DC1826E60123E18C`
-- 下载：<https://github.com/KFLuv/FaultDetect/releases/tag/v1.3.2>
+- 大小：166,998,291 bytes
+- SHA-256：`C068488FDAA13CD58094FDB2E57FF3069AD8C87C9EE1909D4E51EA8897ED0B35`
+- 下载：<https://github.com/KFLuv/FaultDetect/releases/tag/v1.3.3>
 
 ### 本地构建
 
@@ -202,7 +210,7 @@ java -jar target\fault-detect-system.jar
 
 ### Docker
 
-当前正式定位为本机单用户安全模式。Docker 文件暂保留用于构建研究，不作为 v1.3.2 的受支持运行方式。
+当前正式定位为本机单用户安全模式。Docker 文件暂保留用于构建研究，不作为 v1.3.3 的受支持运行方式。
 
 ```bash
 docker compose -f docker-compose-java.yml up -d
@@ -222,6 +230,10 @@ docker compose -f docker-compose-java.yml up -d
 | GET | `/demo/capture.html` | 内置教学业务系统 |
 | GET | `/demo/api/ok` | 教学用正常查询 |
 | GET | `/demo/api/error` | 教学用失败查询 |
+| GET | `/demo/api/not-found` | 教学用 404 |
+| GET | `/demo/api/unauthorized` | 教学用 401 |
+| GET | `/demo/api/empty` | 教学用空数据 200 |
+| GET | `/demo/api/unavailable` | 教学用 503 |
 | POST | `/demo/api/post-error` | 教学用提交类请求，不自动重放 |
 | GET | `/api/history` | 诊断任务列表 |
 | GET | `/api/history/{reportId}` | 完整报告 |
@@ -260,6 +272,7 @@ docker compose -f docker-compose-java.yml up -d
 - [v1.3.2 一键采集验证](docs/testing/FaultDetect-Capture-Assistant-1.3.2.md)
 - [v1.3.2 一键采集原始结果](docs/testing/FaultDetect-Capture-Assistant-1.3.2.json)
 - [v1.3.2 自定义场景预检验证](docs/testing/FaultDetect-Scenario-Preflight-1.3.2.md)
+- [v1.3.3 内嵌采集与教学验证](docs/testing/FaultDetect-Embedded-Capture-1.3.3.md)
 - [浏览器 UI 冒烟结果](docs/testing/FaultDetect-UI-Smoke-20261106.json)
 - [旧库迁移报告](docs/testing/FaultDetect-Migration-20261106.json)
 - [LLM 增强验证](docs/testing/FaultDetect-LLM-Validation-20261106.md)
@@ -267,7 +280,7 @@ docker compose -f docker-compose-java.yml up -d
 - [现场任务验收](docs/testing/FaultDetect-Field-Task-20261105.md)
 - [可重复回归脚本](scripts/run-faultdetect-regression.ps1)
 - [本地故障目标](scripts/faultdetect_mock_target.py)
-- [v1.3.2 发版说明](RELEASE_NOTES_V1.3.2.md)
+- [v1.3.3 发版说明](RELEASE_NOTES_V1.3.3.md)
 - [产品化完整验证](docs/testing/FaultDetect-Operational-Validation-20261106.md)
 - [全功能验收报告](docs/testing/FaultDetect-Full-Acceptance-20261106.md)
 - [安全边界](docs/security/SECURITY-BOUNDARY.md)
@@ -277,7 +290,7 @@ docker compose -f docker-compose-java.yml up -d
 ```powershell
 .\scripts\run-faultdetect-regression.ps1 `
   -BaseUrl http://127.0.0.1:8000 `
-  -Label desktop-v1.3.2
+  -Label desktop-v1.3.3
 
 cd frontend-vue3
 npm run test:ui
@@ -302,6 +315,8 @@ npm run test:ui
 4. 差分实验会增加目标请求数量，不适合禁止重复请求的系统。
 5. 真实日志、数据库和业务规则仍需现场授权后复核。
 6. 当前不提供局域网多人模式，API 只接受本机回环地址。
+7. 内置采集只覆盖在 FaultDetect 主窗口打开的 Web 系统。
+8. 差分隔离实验会增加只读请求数量，因此改为高级选项并默认关闭。
 
 ## 面试时的项目表述
 
