@@ -25,7 +25,7 @@ const getCapturePromise = context.waitForEvent('page')
 await mainPage.getByRole('button', { name: '打开内置教学演示' }).click()
 const getCapture = await getCapturePromise
 await getCapture.waitForLoadState('domcontentloaded')
-assert.match(getCapture.url(), /\/demo\/capture\.html$/)
+assert.match(getCapture.url(), /\/demo\/sites\/orders\.html$/)
 await mainPage.getByTestId('capture-workspace').getByRole('button', { name: '开始记录本次问题' }).click()
 await getCapture.getByRole('button', { name: /查询订单（失败）/ }).click()
 await getCapture.locator('#result', { hasText: 'HTTP 500' }).waitFor()
@@ -41,7 +41,7 @@ assert.match(await mainPage.locator('.status-banner').innerText(), /500/)
 
 await mainPage.locator('.side-nav-item', { hasText: '使用教学' }).click()
 const postCapturePromise = context.waitForEvent('page')
-await mainPage.getByRole('button', { name: '打开内置教学演示' }).click()
+await mainPage.locator('.demo-url-row', { hasText: '审批中心' }).getByRole('button', { name: '打开' }).click()
 const postCapture = await postCapturePromise
 await postCapture.waitForLoadState('domcontentloaded')
 await mainPage.getByTestId('capture-workspace').getByRole('button', { name: '开始记录本次问题' }).click()
@@ -61,13 +61,13 @@ const clipboard = spawnSync('powershell', ['-NoProfile', '-Command', 'Get-Clipbo
 assert.match(clipboard.stdout, /提交审批/)
 
 await mainPage.screenshot({
-    path: path.join(outputDir, 'FaultDetect-Tutorial-1.3.3.png'),
+    path: path.join(outputDir, 'FaultDetect-Tutorial-1.3.4.png'),
     fullPage: true
 })
 
 const result = {
     ok: true,
-    version: '1.3.3',
+    version: '1.3.4',
     tutorial_nav_rendered: true,
     built_in_demo_opened: true,
     get_action_mapped: true,
@@ -77,7 +77,7 @@ const result = {
     page_errors: pageErrors
 }
 fs.writeFileSync(
-    path.join(outputDir, 'FaultDetect-Tutorial-1.3.3.json'),
+    path.join(outputDir, 'FaultDetect-Tutorial-1.3.4.json'),
     JSON.stringify(result, null, 2),
     'utf8'
 )

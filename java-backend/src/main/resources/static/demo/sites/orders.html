@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>演示订单管理系统</title>
+  <link rel="stylesheet" href="demo.css">
+</head>
+<body>
+  <main class="demo-shell">
+    <nav class="demo-nav">
+      <a class="active" href="orders.html">订单系统</a>
+      <a href="account.html">账号中心</a>
+      <a href="approval.html">审批中心</a>
+    </nav>
+    <header class="demo-header">
+      <div class="eyebrow">FAULTDETECT DEMO · ORDER CENTER</div>
+      <h1>订单管理系统</h1>
+      <p class="lead">模拟日常订单查询页面。打开本页后，先开始记录，再点击下面的业务按钮。</p>
+      <div class="notice">这里的按钮会产生真实 HTTP 请求，但只访问 FaultDetect 本地教学接口，不会修改真实数据。</div>
+    </header>
+    <section class="action-grid" aria-label="订单操作">
+      <button data-endpoint="/demo/api/ok"><strong>查询订单（正常）</strong><span>预期 HTTP 200</span></button>
+      <button data-endpoint="/demo/api/error"><strong>查询订单（失败）</strong><span>预期 HTTP 500</span></button>
+      <button data-endpoint="/demo/api/empty"><strong>刷新订单列表（空数据）</strong><span>预期 HTTP 200，data=[]</span></button>
+      <button data-endpoint="/demo/api/not-found"><strong>查看订单详情（接口不存在）</strong><span>预期 HTTP 404</span></button>
+    </section>
+    <section class="demo-result"><h2>操作结果</h2><pre id="result">还没有执行操作。</pre></section>
+  </main>
+  <script src="demo.js"></script>
+</body>
+</html>

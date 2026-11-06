@@ -56,17 +56,22 @@
             <div class="panel-heading">
                 <Copy :size="18" />
                 <div>
-                    <h3>可直接复制的检测地址</h3>
-                    <p>复制后粘贴到“技术人员入口”即可单独检测；也可以打开上面的内置演示页操作。</p>
+                    <h3>可直接打开或复制的演示网站</h3>
+                    <p>打开网页后点击里面的业务按钮；也可以复制网址发给别人。</p>
                 </div>
             </div>
             <div class="demo-url-list">
                 <div v-for="item in demoCases" :key="item.url" class="demo-url-row">
-                    <span class="demo-badge" :class="item.tone">{{ item.expectation }}</span>
+                    <span class="demo-badge">{{ item.tag }}</span>
                     <div>
                         <strong>{{ item.name }}</strong>
                         <code>{{ item.url }}</code>
+                        <span class="demo-desc">{{ item.description }}</span>
                     </div>
+                    <button v-if="desktopAvailable" type="button" class="open-site" @click="openDemoSite(item)">
+                        <ExternalLink :size="14" />
+                        打开
+                    </button>
                     <button type="button" class="copy-url" @click="copyDemoUrl(item)">
                         <Check v-if="copiedUrl === item.url" :size="14" />
                         <Copy v-else :size="14" />
@@ -159,6 +164,7 @@ import {
     CheckCircle2,
     Check,
     Copy,
+    ExternalLink,
     GraduationCap,
     Info,
     ListChecks,
@@ -176,13 +182,24 @@ const desktopAvailable = Boolean(window.faultDetectDesktop?.openCapture)
 const origin = window.location.origin
 const copiedUrl = ref('')
 const demoCases = [
-    { name: '正常查询', url: `${origin}/demo/api/ok`, expectation: 'HTTP 200', tone: 'good' },
-    { name: '后端异常', url: `${origin}/demo/api/error`, expectation: 'HTTP 500', tone: 'bad' },
-    { name: '接口不存在', url: `${origin}/demo/api/not-found`, expectation: 'HTTP 404', tone: 'bad' },
-    { name: '登录态失效', url: `${origin}/demo/api/unauthorized`, expectation: 'HTTP 401', tone: 'warn' },
-    { name: '空数据页', url: `${origin}/demo/api/empty`, expectation: 'HTTP 200 · 空数据', tone: 'warn' },
-    { name: '上游不可用', url: `${origin}/demo/api/unavailable`, expectation: 'HTTP 503', tone: 'bad' },
-    { name: '提交审批失败', url: `${origin}/demo/api/post-error`, expectation: 'POST · 不自动重放', tone: 'warn' }
+    {
+        name: '订单管理系统',
+        url: `${origin}/demo/sites/orders.html`,
+        tag: '订单',
+        description: '查询正常、500、404 和空数据'
+    },
+    {
+        name: '账号与权限中心',
+        url: `${origin}/demo/sites/account.html`,
+        tag: '账号',
+        description: '个人资料、登录失效和权限菜单'
+    },
+    {
+        name: '审批中心',
+        url: `${origin}/demo/sites/approval.html`,
+        tag: '审批',
+        description: '服务不可用和 POST 提交审批失败'
+    }
 ]
 
 async function copyDemoUrl(item) {
@@ -194,8 +211,11 @@ async function copyDemoUrl(item) {
 }
 
 async function openDemo() {
-    const url = new URL('/demo/capture.html', window.location.origin).toString()
-    await window.faultDetectDesktop.openCapture(url)
+    await openDemoSite(demoCases[0])
+}
+
+async function openDemoSite(item) {
+    await window.faultDetectDesktop.openCapture(item.url)
     emit('demo-opened')
 }
 </script>
@@ -352,24 +372,11 @@ async function openDemo() {
     padding: 3px 7px;
     border-radius: 4px;
     font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    color: var(--primary);
+    background: color-mix(in srgb, var(--primary) 8%, transparent);
     font-size: 9px;
     font-weight: 700;
     text-align: center;
-}
-
-.demo-badge.good {
-    color: var(--success);
-    background: color-mix(in srgb, var(--success) 8%, transparent);
-}
-
-.demo-badge.warn {
-    color: var(--warning);
-    background: color-mix(in srgb, var(--warning) 8%, transparent);
-}
-
-.demo-badge.bad {
-    color: var(--danger);
-    background: color-mix(in srgb, var(--danger) 8%, transparent);
 }
 
 .demo-url-row > div {
@@ -391,6 +398,12 @@ async function openDemo() {
     white-space: nowrap;
 }
 
+.demo-desc {
+    color: var(--text-dim);
+    font-size: 10px;
+}
+
+.open-site,
 .copy-url {
     display: inline-flex;
     align-items: center;
@@ -404,6 +417,10 @@ async function openDemo() {
     font: inherit;
     font-size: 10px;
     cursor: pointer;
+}
+
+.open-site {
+    color: var(--success);
 }
 
 .tutorial-columns {
@@ -538,8 +555,12 @@ async function openDemo() {
         flex-basis: calc(100% - 100px);
     }
 
-    .copy-url {
+    .open-site {
         margin-left: auto;
+    }
+
+    .copy-url {
+        margin-left: 0;
     }
 }
 </style>

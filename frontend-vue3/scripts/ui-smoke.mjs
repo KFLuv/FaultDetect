@@ -66,6 +66,19 @@ try {
         demoStatuses[demoPath] = (await fetch(baseUrl + demoPath)).status
     }
     demoStatuses['/demo/api/post-error'] = (await fetch(baseUrl + '/demo/api/post-error', { method: 'POST' })).status
+    const demoPages = {}
+    for (const [sitePath, marker] of [
+        ['/demo/sites/orders.html', '订单管理系统'],
+        ['/demo/sites/account.html', '账号与权限中心'],
+        ['/demo/sites/approval.html', '审批中心']
+    ]) {
+        const response = await fetch(baseUrl + sitePath)
+        const html = await response.text()
+        demoPages[sitePath] = {
+            status: response.status,
+            marker: html.includes(marker)
+        }
+    }
     assert.deepEqual(demoStatuses, {
         '/demo/api/ok': 200,
         '/demo/api/error': 500,
@@ -107,10 +120,10 @@ try {
     }
 
     await page.locator('.side-nav-item', { hasText: '使用教学' }).click()
-    assert.equal(await page.locator('.demo-url-row').count(), 7)
+    assert.equal(await page.locator('.demo-url-row').count(), 3)
     await page.locator('.demo-url-row').first().getByRole('button', { name: '复制' }).click()
     await page.waitForTimeout(200)
-    assert.match(await page.evaluate(() => navigator.clipboard.readText()), /\/demo\/api\/ok$/)
+    assert.match(await page.evaluate(() => navigator.clipboard.readText()), /\/demo\/sites\/orders\.html$/)
 
     await page.locator('.side-nav-item', { hasText: '故障检测' }).click()
     await page.getByTestId('manual-toggle').click()
@@ -262,8 +275,9 @@ try {
         llm_disabled_rules_only: true,
         unknown_mode_rendered: true,
         unknown_layers: 7,
-        tutorial_demo_urls: 7,
+        tutorial_demo_sites: 3,
         tutorial_demo_statuses: demoStatuses,
+        tutorial_demo_pages: demoPages,
         advanced_diagnostics_collapsed_by_default: true,
         clear_result_verified: true,
         custom_scenario_preflight_warned: true,

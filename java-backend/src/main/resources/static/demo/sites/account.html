@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>演示账号中心</title>
+  <link rel="stylesheet" href="demo.css">
+</head>
+<body>
+  <main class="demo-shell">
+    <nav class="demo-nav">
+      <a href="orders.html">订单系统</a>
+      <a class="active" href="account.html">账号中心</a>
+      <a href="approval.html">审批中心</a>
+    </nav>
+    <header class="demo-header">
+      <div class="eyebrow">FAULTDETECT DEMO · ACCOUNT CENTER</div>
+      <h1>账号与权限中心</h1>
+      <p class="lead">模拟用户资料、登录态和权限菜单接口。用于练习 401 未授权问题。</p>
+      <div class="notice">先点击“开始记录本次问题”，再点击“刷新登录状态”或“加载权限菜单”。</div>
+    </header>
+    <section class="action-grid" aria-label="账号操作">
+      <button data-endpoint="/demo/api/ok"><strong>读取个人资料（正常）</strong><span>预期 HTTP 200</span></button>
+      <button data-endpoint="/demo/api/unauthorized"><strong>刷新登录状态（登录失效）</strong><span>预期 HTTP 401</span></button>
+      <button data-endpoint="/demo/api/unauthorized"><strong>加载权限菜单（无权限）</strong><span>预期 HTTP 401</span></button>
+    </section>
+    <section class="demo-result"><h2>操作结果</h2><pre id="result">还没有执行操作。</pre></section>
+  </main>
+  <script src="demo.js"></script>
+</body>
+</html>

@@ -136,8 +136,20 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: true
+      sandbox: true,
+      webviewTag: true
     }
+  })
+
+  mainWindow.webContents.on('will-attach-webview', (event, webPreferences, params) => {
+    if (!/^https?:\/\//i.test(params.src || '')) {
+      event.preventDefault()
+      return
+    }
+    webPreferences.preload = path.join(__dirname, 'capture-preload.js')
+    webPreferences.nodeIntegration = false
+    webPreferences.contextIsolation = true
+    webPreferences.sandbox = true
   })
 
   mainWindow.once('ready-to-show', () => mainWindow.show())
@@ -165,17 +177,17 @@ if (!hasLock) {
   })
 
   app.whenReady().then(async () => {
-    captureService = createCaptureService({
-      onUpdate: publishCaptureState,
-      getMainWindow: () => mainWindow
-    })
+    captureService = createCaptureService({ onUpdate: publishCaptureState })
     session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
       callback(permission === 'geolocation')
     })
 
     app.on('web-contents-created', (_event, contents) => {
       if (captureService.ownsSession(contents.session)) {
-        contents.setWindowOpenHandler(({ url }) => captureService.handleWindowOpen(url))
+        contents.setWindowOpenHandler(({ url }) => {
+          if (/^https?:\/\//i.test(url)) contents.loadURL(url).catch(() => {})
+          return { action: 'deny' }
+        })
         return
       }
       contents.setWindowOpenHandler(({ url }) => {
@@ -211,17 +223,13 @@ if (!hasLock) {
   })
   ipcMain.handle('capture:open', (_event, startUrl) => captureService.open(startUrl))
   ipcMain.handle('capture:state', () => captureService.state())
-  ipcMain.handle('capture:set-bounds', (_event, bounds) => captureService.setBounds(bounds))
   ipcMain.handle('capture:set-recording', (_event, enabled) => captureService.setRecording(enabled))
-  ipcMain.handle('capture:command', (_event, action) => captureService.command(action))
   ipcMain.handle('capture:close', () => {
     captureService.close()
     return { ok: true }
   })
   ipcMain.handle('capture:clear', () => captureService.clear())
-  ipcMain.on('capture:ui-action', (event, payload) => {
-    if (captureService.ownsContents(event.sender)) captureService.noteUiAction(payload)
-  })
+  ipcMain.handle('capture:note-action', (_event, payload) => captureService.noteUiAction(payload))
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

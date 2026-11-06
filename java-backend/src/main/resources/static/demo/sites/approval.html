@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>演示审批中心</title>
+  <link rel="stylesheet" href="demo.css">
+</head>
+<body>
+  <main class="demo-shell">
+    <nav class="demo-nav">
+      <a href="orders.html">订单系统</a>
+      <a href="account.html">账号中心</a>
+      <a class="active" href="approval.html">审批中心</a>
+    </nav>
+    <header class="demo-header">
+      <div class="eyebrow">FAULTDETECT DEMO · APPROVAL CENTER</div>
+      <h1>审批中心</h1>
+      <p class="lead">模拟待办查询、上游服务不可用和审批提交失败。提交类请求不会被 FaultDetect 自动重放。</p>
+      <div class="notice">开始记录后点击“提交审批（失败）”，系统会把 POST 请求标为不可自动检测，并提供交接信息复制。</div>
+    </header>
+    <section class="action-grid" aria-label="审批操作">
+      <button data-endpoint="/demo/api/ok"><strong>查询待审批列表（正常）</strong><span>预期 HTTP 200</span></button>
+      <button data-endpoint="/demo/api/unavailable"><strong>查询上游审批状态（服务不可用）</strong><span>预期 HTTP 503</span></button>
+      <button data-endpoint="/demo/api/post-error" data-method="POST"><strong>提交审批（失败）</strong><span>POST，预期 HTTP 500，不自动重放</span></button>
+    </section>
+    <section class="demo-result"><h2>操作结果</h2><pre id="result">还没有执行操作。</pre></section>
+  </main>
+  <script src="demo.js"></script>
+</body>
+</html>

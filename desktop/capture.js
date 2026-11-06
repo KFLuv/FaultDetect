@@ -1,8 +1,14 @@
-const { WebContentsView, session } = require('electron')
-const path = require('path')
+const { session } = require('electron')
 
 const CAPTURE_PARTITION = 'faultdetect-capture-session'
 const MAX_REQUESTS = 80
+const IGNORED_HOST_PATTERNS = [
+  /(^|\.)google-analytics\.com$/i,
+  /(^|\.)googletagmanager\.com$/i,
+  /(^|\.)doubleclick\.net$/i,
+  /(^|\.)optimizely\.com$/i,
+  /(^|\.)facebook\.net$/i
+]
 
 function normalizeSiteUrl(value) {
   const input = String(value || '').trim()
@@ -29,23 +35,20 @@ function usableHeaders(headers) {
   return result
 }
 
-function createCaptureService({ onUpdate, getMainWindow }) {
+function createCaptureService({ onUpdate }) {
   let captureSession = null
-  let captureView = null
+  let active = false
+  let targetUrl = ''
   let sequence = 0
   let requests = []
   let recording = false
   let lastUiAction = null
-  let viewBounds = { x: 0, y: 72, width: 1200, height: 800 }
   const pendingHeaders = new Map()
-
-  function active() {
-    return Boolean(captureView && !captureView.webContents.isDestroyed())
-  }
 
   function state() {
     return {
-      active: active(),
+      active,
+      targetUrl,
       recording,
       requests
     }
@@ -59,15 +62,12 @@ function createCaptureService({ onUpdate, getMainWindow }) {
     return Boolean(captureSession && candidate === captureSession)
   }
 
-  function ownsContents(contents) {
-    return Boolean(captureSession && contents?.session === captureSession)
-  }
-
   function noteUiAction(payload) {
     const label = String(payload?.label || '').replace(/\s+/g, ' ').trim().slice(0, 80)
     const occurredAt = Number(payload?.occurredAt || 0)
-    if (!label || !occurredAt) return
+    if (!label || !occurredAt) return { ok: true }
     lastUiAction = { label, occurredAt }
+    return { ok: true }
   }
 
   function addRequest(details, errorMessage) {
@@ -76,7 +76,8 @@ function createCaptureService({ onUpdate, getMainWindow }) {
     const statusCode = Number(details.statusCode || 0)
     const isFailure = Boolean(errorMessage) || statusCode >= 400
     const isApi = resourceType === 'xhr' || resourceType === 'fetch'
-    if (!isApi && !(resourceType === 'document' && isFailure)) return
+    const isDocument = ['document', 'mainFrame', 'subFrame'].includes(resourceType)
+    if (!isApi && !(isDocument && isFailure)) return
     if (!/^https?:\/\//i.test(details.url || '')) return
 
     const parsed = (() => {
@@ -86,6 +87,7 @@ function createCaptureService({ onUpdate, getMainWindow }) {
       && ['127.0.0.1', 'localhost'].includes(parsed.hostname)
       && parsed.port === '8000'
     if (isFaultDetectLocal && !parsed.pathname.startsWith('/demo/')) return
+    if (parsed && IGNORED_HOST_PATTERNS.some(pattern => pattern.test(parsed.hostname))) return
 
     const dedupeKey = `${method} ${details.url}`
     const actionLabel = lastUiAction && Date.now() - lastUiAction.occurredAt <= 30000
@@ -107,7 +109,8 @@ function createCaptureService({ onUpdate, getMainWindow }) {
       headers: pendingHeaders.get(details.id) || {},
       capturedAt: new Date().toISOString()
     }
-    requests = [item, ...requests.filter(existing => existing.key !== dedupeKey)].slice(0, MAX_REQUESTS)
+    requests = [item, ...requests.filter(existing => existing.key !== dedupeKey)]
+      .slice(0, MAX_REQUESTS)
     publish()
 
     const hasCookie = Object.keys(item.headers).some(name => name.toLowerCase() === 'cookie')
@@ -160,40 +163,20 @@ function createCaptureService({ onUpdate, getMainWindow }) {
     return captureSession
   }
 
-  function setBounds(bounds) {
-    const next = {
-      x: Math.max(0, Math.round(Number(bounds?.x) || 0)),
-      y: Math.max(0, Math.round(Number(bounds?.y) || 0)),
-      width: Math.max(1, Math.round(Number(bounds?.width) || 1)),
-      height: Math.max(1, Math.round(Number(bounds?.height) || 1))
+  function open(rawUrl) {
+    const normalized = normalizeSiteUrl(rawUrl)
+    if (!normalized) {
+      return { ok: false, error: '请输入有效的业务系统地址，例如 https://oa.example.com' }
     }
-    viewBounds = next
-    if (active()) captureView.setBounds(next)
-    return { ok: true }
-  }
-
-  function attachView(targetUrl) {
-    const window = getMainWindow()
-    if (!window || window.isDestroyed()) {
-      return { ok: false, error: 'FaultDetect 主窗口不可用' }
-    }
-    captureView = new WebContentsView({
-      webPreferences: {
-        preload: path.join(__dirname, 'capture-preload.js'),
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: true,
-        partition: CAPTURE_PARTITION
-      }
-    })
-    captureView.setBackgroundColor('#ffffff')
-    captureView.setBounds(viewBounds)
-    window.contentView.addChildView(captureView)
-    captureView.webContents.loadURL(targetUrl).catch(error => {
-      publish()
-      console.error('capture view load failed', error)
-    })
-    return { ok: true }
+    ensureSession()
+    active = true
+    targetUrl = normalized
+    requests = []
+    recording = false
+    lastUiAction = null
+    pendingHeaders.clear()
+    publish()
+    return { ok: true, targetUrl }
   }
 
   function setRecording(enabled) {
@@ -205,56 +188,16 @@ function createCaptureService({ onUpdate, getMainWindow }) {
     }
     recording = next
     publish()
-    if (recording && active()) captureView.webContents.focus()
     return state()
   }
 
-  function open(rawUrl) {
-    const targetUrl = normalizeSiteUrl(rawUrl)
-    if (!targetUrl) {
-      return { ok: false, error: '请输入有效的业务系统地址，例如 https://oa.example.com' }
-    }
-    ensureSession()
-    if (active()) {
-      captureView.webContents.loadURL(targetUrl).catch(() => {})
-      return { ok: true }
-    }
-
-    requests = []
-    recording = false
-    lastUiAction = null
-    pendingHeaders.clear()
-    const result = attachView(targetUrl)
-    publish()
-    return result
-  }
-
   function close() {
-    const window = getMainWindow()
-    if (captureView && !captureView.webContents.isDestroyed()) {
-      if (window && !window.isDestroyed()) window.contentView.removeChildView(captureView)
-      captureView.webContents.close()
-    }
-    captureView = null
+    active = false
+    targetUrl = ''
     recording = false
     pendingHeaders.clear()
     publish()
     return { ok: true }
-  }
-
-  function command(action) {
-    if (!active()) return { ok: false }
-    if (action === 'back' && captureView.webContents.canGoBack()) captureView.webContents.goBack()
-    if (action === 'forward' && captureView.webContents.canGoForward()) captureView.webContents.goForward()
-    if (action === 'reload') captureView.webContents.reload()
-    return { ok: true }
-  }
-
-  function handleWindowOpen(url) {
-    if (active() && /^https?:\/\//i.test(url)) {
-      captureView.webContents.loadURL(url).catch(() => {})
-    }
-    return { action: 'deny' }
   }
 
   function clear() {
@@ -269,13 +212,9 @@ function createCaptureService({ onUpdate, getMainWindow }) {
     close,
     clear,
     state,
-    setBounds,
     setRecording,
-    command,
     ownsSession,
-    ownsContents,
-    noteUiAction,
-    handleWindowOpen
+    noteUiAction
   }
 }
 

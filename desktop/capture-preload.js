@@ -26,7 +26,7 @@ function reportAction(target, source) {
   const element = interactiveElement(target)
   const label = labelFor(element)
   if (!label) return
-  ipcRenderer.send('capture:ui-action', {
+  ipcRenderer.sendToHost('capture-ui-action', {
     label,
     source,
     occurredAt: Date.now()

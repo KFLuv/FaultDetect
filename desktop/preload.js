@@ -6,9 +6,8 @@ contextBridge.exposeInMainWorld('faultDetectDesktop', {
   copyText: (text) => ipcRenderer.invoke('clipboard:write', text),
   openCapture: (startUrl) => ipcRenderer.invoke('capture:open', startUrl),
   getCaptureState: () => ipcRenderer.invoke('capture:state'),
-  setCaptureBounds: (bounds) => ipcRenderer.invoke('capture:set-bounds', bounds),
   setCaptureRecording: (enabled) => ipcRenderer.invoke('capture:set-recording', enabled),
-  captureCommand: (action) => ipcRenderer.invoke('capture:command', action),
+  noteCaptureAction: (payload) => ipcRenderer.invoke('capture:note-action', payload),
   closeCapture: () => ipcRenderer.invoke('capture:close'),
   clearCapture: () => ipcRenderer.invoke('capture:clear'),
   onCaptureUpdated: (callback) => {

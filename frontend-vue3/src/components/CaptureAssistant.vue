@@ -137,15 +137,23 @@
                     </button>
                 </div>
             </header>
-            <div ref="browserHost" class="browser-host">
-                <span>正在加载业务系统…</span>
+            <div class="browser-host">
+                <webview
+                    ref="captureWebview"
+                    :src="captureUrl"
+                    partition="faultdetect-capture-session"
+                    webpreferences="contextIsolation=yes, sandbox=yes, nodeIntegration=no"
+                    class="embedded-webview"
+                    @ipc-message="handleWebviewMessage"
+                    @dom-ready="handleWebviewReady"
+                />
             </div>
         </div>
     </Teleport>
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
     AppWindow,
     ArrowRight,
@@ -173,9 +181,9 @@ const authorized = ref(false)
 const requests = ref([])
 const errorMessage = ref('')
 const copiedId = ref(0)
-const browserHost = ref(null)
+const captureWebview = ref(null)
+const captureUrl = ref('')
 let unsubscribe = null
-let resizeObserver = null
 
 const sortedRequests = computed(() => [...requests.value].sort((left, right) => {
     if (left.isFailure !== right.isFailure) return left.isFailure ? -1 : 1
@@ -187,32 +195,12 @@ function applyState(state) {
     if (!state) return
     active.value = Boolean(state.active)
     recording.value = Boolean(state.recording)
+    captureUrl.value = state.targetUrl || ''
     requests.value = Array.isArray(state.requests) ? state.requests : []
 }
 
-function updateCaptureBounds() {
-    if (!active.value || !browserHost.value || !window.faultDetectDesktop?.setCaptureBounds) return
-    const rect = browserHost.value.getBoundingClientRect()
-    window.faultDetectDesktop.setCaptureBounds({
-        x: rect.left,
-        y: rect.top,
-        width: rect.width,
-        height: rect.height
-    })
-}
-
-async function syncWorkspace() {
+function syncWorkspace() {
     document.body.classList.toggle('capture-workspace-open', active.value)
-    await nextTick()
-    updateCaptureBounds()
-    if (active.value && browserHost.value && !resizeObserver) {
-        resizeObserver = new ResizeObserver(updateCaptureBounds)
-        resizeObserver.observe(browserHost.value)
-    }
-    if (!active.value && resizeObserver) {
-        resizeObserver.disconnect()
-        resizeObserver = null
-    }
 }
 
 function statusLabel(item) {
@@ -243,7 +231,21 @@ async function closeBusinessSystem() {
 }
 
 async function captureCommand(action) {
-    await window.faultDetectDesktop.captureCommand(action)
+    const view = captureWebview.value
+    if (!view) return
+    if (action === 'back' && view.canGoBack()) view.goBack()
+    if (action === 'forward' && view.canGoForward()) view.goForward()
+    if (action === 'reload') view.reload()
+}
+
+function handleWebviewMessage(event) {
+    if (event.channel !== 'capture-ui-action') return
+    const payload = event.args?.[0]
+    if (payload) window.faultDetectDesktop.noteCaptureAction(payload)
+}
+
+function handleWebviewReady() {
+    captureWebview.value?.focus()
 }
 
 async function startRecording() {
@@ -298,17 +300,14 @@ onMounted(async () => {
     } catch (error) {
         errorMessage.value = '读取采集状态失败：' + (error.message || String(error))
     }
-    window.addEventListener('resize', updateCaptureBounds)
 })
 
 onBeforeUnmount(() => {
     if (unsubscribe) unsubscribe()
-    window.removeEventListener('resize', updateCaptureBounds)
-    if (resizeObserver) resizeObserver.disconnect()
     document.body.classList.remove('capture-workspace-open')
 })
 
-watch(active, syncWorkspace, { flush: 'post' })
+watch(active, syncWorkspace)
 </script>
 
 <style scoped>
@@ -823,6 +822,12 @@ watch(active, syncWorkspace, { flush: 'post' })
     background: #eef2f6;
     color: #667085;
     font-size: 13px;
+}
+
+.embedded-webview {
+    width: 100%;
+    height: 100%;
+    display: flex;
 }
 
 @media (max-width: 900px) {
