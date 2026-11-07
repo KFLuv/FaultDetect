@@ -1,9 +1,6 @@
-name: Release
+name: Build Release Candidate
 
 on:
-  push:
-    tags:
-      - 'v*'
   workflow_dispatch:
     inputs:
       tag:
@@ -11,16 +8,18 @@ on:
         required: true
 
 jobs:
-  build:
+  build-candidate:
     runs-on: windows-latest
     permissions:
-      contents: write
+      contents: read
     env:
       TAG: ${{ github.event.inputs.tag || github.ref_name }}
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag }}
 
       - uses: actions/setup-java@v4
         with:
@@ -81,12 +80,11 @@ jobs:
           npm run jre
           npx electron-builder --win portable --publish never
 
-      - name: Publish GitHub Release
-        uses: softprops/action-gh-release@v2
+      - name: Upload release candidate artifacts
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: ${{ env.TAG }}
-          name: FaultDetect ${{ env.TAG }}
-          body_path: ${{ env.NOTES_PATH }}
-          files: |
+          name: faultdetect-release-candidate-${{ env.TAG }}
+          if-no-files-found: error
+          path: |
             desktop/release_app/FaultDetect-*-portable.exe
             java-backend/target/fault-detect-system.jar
