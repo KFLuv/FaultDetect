@@ -1,6 +1,6 @@
 {
   "name": "faultdetect-desktop",
-  "version": "1.3.6",
+  "version": "1.3.7",
   "description": "FaultDetect 可审计排障桌面工作台",
   "main": "main.js",
   "scripts": {

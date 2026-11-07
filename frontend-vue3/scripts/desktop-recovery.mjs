@@ -11,16 +11,22 @@ const context = browser.contexts()[0]
 const page = context.pages().find(item => item.url().startsWith('http://127.0.0.1:8000'))
 if (!page) throw new Error('FaultDetect desktop page not found')
 
-await page.waitForSelector('input[placeholder*="192.0.2.10"]')
+await page.goto('http://127.0.0.1:8000/', { waitUntil: 'networkidle' })
+await page.locator('.side-nav-item', { hasText: '故障检测' }).click()
+const manualToggle = page.getByTestId('manual-toggle')
+if ((await manualToggle.getAttribute('aria-expanded')) !== 'true') {
+    await manualToggle.click()
+}
+await page.getByTestId('manual-url').waitFor()
 let dialogMessage = ''
 page.on('dialog', async dialog => {
     dialogMessage = dialog.message()
     await dialog.accept()
 })
 
-await page.locator('input[placeholder*="192.0.2.10"]').fill('http://127.0.0.1:18080/error')
+await page.getByTestId('manual-url').fill('http://127.0.0.1:18080/error')
 await page.locator('input[placeholder*="页面显示空表格"]').fill('后端断线自动恢复验证')
-await page.locator('input[type="checkbox"]').first().check()
+await page.locator('label.auth-confirm input').check()
 
 const killed = spawnSync('taskkill', ['/PID', String(backendPid), '/F'], {
     encoding: 'utf8',
@@ -46,7 +52,7 @@ const health = await page.evaluate(async () => {
     const response = await fetch('/api/health', { cache: 'no-store' })
     return response.ok ? response.json() : null
 })
-if (health?.version !== '1.3.1') {
+if (health?.status !== 'ok' || !health.version) {
     throw new Error(`Unexpected backend health: ${JSON.stringify(health)}`)
 }
 

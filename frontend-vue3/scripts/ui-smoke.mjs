@@ -119,6 +119,14 @@ try {
         await page.locator('.page-heading h1', { hasText: heading }).waitFor()
     }
 
+    await page.locator('.side-nav-item', { hasText: '状态码' }).click()
+    await page.locator('.code-card').first().waitFor()
+    assert.equal(await page.locator('.code-card').count(), 59)
+    await page.getByPlaceholder('搜索状态码、名称、说明或排查建议...').fill('Internal Server Error')
+    assert.equal(await page.locator('.code-card').count(), 1)
+    assert.ok((await page.locator('.code-card').innerText()).includes('500'))
+    await page.getByPlaceholder('搜索状态码、名称、说明或排查建议...').fill('')
+
     await page.locator('.side-nav-item', { hasText: '使用教学' }).click()
     assert.equal(await page.locator('.demo-url-row').count(), 3)
     await page.locator('.demo-url-row').first().getByRole('button', { name: '复制' }).click()
@@ -278,6 +286,7 @@ try {
         tutorial_demo_sites: 3,
         tutorial_demo_statuses: demoStatuses,
         tutorial_demo_pages: demoPages,
+        status_code_search_verified: true,
         advanced_diagnostics_collapsed_by_default: true,
         clear_result_verified: true,
         custom_scenario_preflight_warned: true,

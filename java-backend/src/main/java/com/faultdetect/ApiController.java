@@ -200,7 +200,7 @@ public class ApiController {
     public Map<String, Object> health() {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("status", "ok");
-        m.put("version", "1.3.6");
+        m.put("version", "1.3.7");
         m.put("security_mode", "local-only");
         m.put("total_scenarios", allScenarios().size());
         m.put("total_status_codes", knowledge.statusCodes.size());
@@ -488,8 +488,9 @@ public class ApiController {
 
     @PostMapping("/api/history/{reportId}/promote-unknown")
     @SuppressWarnings("unchecked")
-    public Map<String, Object> promoteUnknown(@PathVariable String reportId,
-                                              @RequestBody UnknownPromotionRequest req) {
+    public synchronized Map<String, Object> promoteUnknown(
+            @PathVariable String reportId,
+            @RequestBody UnknownPromotionRequest req) {
         Map<String, Object> report = history.getReport(reportId);
         if (report == null) {
             throw new ApiException(404, "报告不存在或已删除");
@@ -499,6 +500,19 @@ public class ApiController {
                 || !Boolean.TRUE.equals(((Map<String, Object>) unknownObj).get("active"))) {
             throw new ApiException(400, "只有未知场景模式生成的报告可以执行此操作");
         }
+
+        String promotedScenarioId = history.getPromotedScenarioId(reportId);
+        Scenario existingScenario = history.getCustomScenario(promotedScenarioId);
+        if (existingScenario != null) {
+            Map<String, Object> out = new LinkedHashMap<>();
+            out.put("status", "ok");
+            out.put("already_promoted", true);
+            out.put("scenario", existingScenario);
+            out.put("rule_candidate", null);
+            out.put("message", "该报告已归档，本次未重复创建场景");
+            return out;
+        }
+
         if (req.root_cause == null || !knowledge.categoryLabels.containsKey(req.root_cause)) {
             throw new ApiException(400, "最终根因归属不合法");
         }
@@ -553,6 +567,7 @@ public class ApiController {
 
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("status", "ok");
+        out.put("already_promoted", false);
         out.put("scenario", sc);
         out.put("rule_candidate", ruleCandidate);
         out.put("message", "已加入自定义场景库，并生成待审核的规则候选");

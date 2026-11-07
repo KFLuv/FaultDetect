@@ -231,6 +231,33 @@ public class HistoryRepository {
         }
     }
 
+    public String getPromotedScenarioId(String reportId) {
+        try (Connection conn = open();
+             PreparedStatement ps = conn.prepareStatement(
+                     "SELECT promoted_scenario_id FROM detect_history "
+                             + "WHERE report_id=? OR id=? LIMIT 1")) {
+            ps.setString(1, reportId);
+            ps.setString(2, reportId);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next()
+                        ? defaultString(rs.getString("promoted_scenario_id"), "")
+                        : "";
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("读取归档场景失败", e);
+        }
+    }
+
+    public Scenario getCustomScenario(String scenarioId) {
+        if (scenarioId == null || scenarioId.isBlank()) {
+            return null;
+        }
+        return customScenarios.stream()
+                .filter(item -> scenarioId.equals(item.id))
+                .findFirst()
+                .orElse(null);
+    }
+
     public boolean updateFollowUp(String reportId, String status, String owner,
                                   String note, String closedReason) {
         try (Connection conn = open();

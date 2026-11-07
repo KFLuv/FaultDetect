@@ -67,7 +67,7 @@ const publicDetectionBanner = (await mainPage.locator('.status-banner').innerTex
 
 const result = {
     ok: true,
-    version: '1.3.6',
+    version: '1.3.7',
     lting: {
         url: 'http://127.0.0.1:8078/chat/login.html',
         title: '用户登录',
@@ -94,7 +94,7 @@ const result = {
     }
 }
 fs.writeFileSync(
-    path.join(outputDir, 'FaultDetect-Real-Sites-1.3.6.json'),
+    path.join(outputDir, 'FaultDetect-Real-Sites-1.3.7.json'),
     JSON.stringify(result, null, 2),
     'utf8'
 )

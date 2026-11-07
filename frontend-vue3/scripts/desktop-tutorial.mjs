@@ -96,13 +96,13 @@ assert.match(await browserError.innerText(), /连接被拒绝|网页加载失败
 await browserError.getByRole('button', { name: '返回地址' }).click()
 
 await mainPage.screenshot({
-    path: path.join(outputDir, 'FaultDetect-Tutorial-1.3.6.png'),
+    path: path.join(outputDir, 'FaultDetect-Tutorial-1.3.7.png'),
     fullPage: true
 })
 
 const result = {
     ok: true,
-    version: '1.3.6',
+    version: '1.3.7',
     tutorial_nav_rendered: true,
     built_in_demo_opened: true,
     get_action_mapped: true,
@@ -119,7 +119,7 @@ const result = {
     page_errors: pageErrors
 }
 fs.writeFileSync(
-    path.join(outputDir, 'FaultDetect-Tutorial-1.3.6.json'),
+    path.join(outputDir, 'FaultDetect-Tutorial-1.3.7.json'),
     JSON.stringify(result, null, 2),
     'utf8'
 )
