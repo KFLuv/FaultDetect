@@ -21,7 +21,7 @@ FaultDetect 是一个以**可复现、可审计、只读安全**为约束的排�
 - 完整诊断链路返回状态码、检测步骤、差分实验、假设、证据、报告和历史记录。
 - 无效 URL 返回 400，不会让服务崩溃。
 - 桌面版包含内嵌 JRE，目标机器无需安装 Java。
-- `FaultDetect-1.3.7-portable.exe` 已通过 Electron 桌面窗口启动验证，不再调用系统浏览器。
+- `FaultDetect-1.3.8-portable.exe` 已通过 Electron 桌面窗口启动验证，不再调用系统浏览器。
 - 本地后端被终止后，桌面端可以自动重启并重试当前检测请求，不再直接显示 `fail to fetch`。
 - 业务人员可以在应用内打开目标业务系统，点击“开始记录本次问题”后自动采集请求，不需要使用 F12。
 - 采集窗口默认待机，只有本次问题记录期间的请求会进入候选列表；正常浏览不会混入。
@@ -89,6 +89,31 @@ TCP / HTTP 并行观测
     ↓
 历史记录、现场复核与后续跟进
 ```
+
+### 它到底能做什么
+
+FaultDetect 的定位是 **Web HTTP 现场排障工作台**，不是所有系统都能自动修好的诊断器。
+
+它能做：
+
+- 在应用内打开 Web 业务系统，自动关联按钮和失败请求；
+- 对 GET / HEAD 做只读探测、差分实验和分层归因；
+- 对 POST 等写请求生成脱敏失败快照，不自动重放；
+- 分析网络、HTTP、认证、权限、接口契约、服务、网关、数据库线索、业务码和前端表现；
+- 输出证据链、假设、反证条件、验证动作和研发交接包。
+
+它不能直接做：
+
+- 自动修复、自动提交或自动修改目标系统；
+- 监听原浏览器、手机 App、原生桌面客户端和系统级全部流量；
+- 完整诊断 WebSocket、SSE、文件上传事务和一次性验证码流程；
+- 替代服务端日志、APM、数据库审计和抓包。
+
+完整能力矩阵和全部限制见：
+
+- [能力与适配边界](docs/能力与适配边界.md)
+- [1.3.0 到 1.3.8 产品迭代脉络](docs/迭代脉络-1.3.0到1.3.8.md)
+- 教学页的“全部内置可匹配故障场景”会动态展示当前 132 个场景名称。
 
 失败路径同样被纳入产品：
 
@@ -187,15 +212,15 @@ LLM 默认关闭。未配置、网络不可达、超时或返回格式异常时�
 
 ### 桌面 EXE
 
-双击 `FaultDetect-1.3.7-portable.exe`。程序会在 Electron 桌面窗口中直接打开界面，自动启动内置 JRE 和本地后端，不依赖系统浏览器。
+双击 `FaultDetect-1.3.8-portable.exe`。程序会在 Electron 桌面窗口中直接打开界面，自动启动内置 JRE 和本地后端，不依赖系统浏览器。
 
 目标机器无需安装 Java、Node.js 或浏览器。业务数据默认保存在 `%LOCALAPPDATA%\FaultDetectSystem\data\`。
 
 GitHub Release 包：
 
-- 大小：167,011,567 bytes
-- SHA-256：`DE077CDB89A693B8AFE03C5C173766EB9E70ED96AEC2B9F002A9397E4DC8F873`
-- 下载：<https://github.com/KFLuv/FaultDetect/releases/tag/v1.3.7>
+- 大小：167,007,247 bytes
+- SHA-256：`DC70CD351A4AFA53DD5F422DE7F83C83EB18E05443DF9A186C3E7986A1BA35A6`
+- 下载：<https://github.com/KFLuv/FaultDetect/releases/tag/v1.3.8>
 
 ### 本地构建
 
@@ -217,7 +242,7 @@ java -jar target\fault-detect-system.jar
 
 ### Docker
 
-当前正式定位为本机单用户安全模式。Docker 文件暂保留用于构建研究，不作为 v1.3.7 的受支持运行方式。
+当前正式定位为本机单用户安全模式。Docker 文件暂保留用于构建研究，不作为 v1.3.8 的受支持运行方式。
 
 ```bash
 docker compose -f docker-compose-java.yml up -d
@@ -284,6 +309,8 @@ docker compose -f docker-compose-java.yml up -d
 - [v1.3.5 不可重放请求快照验证](docs/testing/FaultDetect-Response-Snapshot-1.3.5.md)
 - [v1.3.6 请求体证据与兼容性验证](docs/testing/FaultDetect-Request-Evidence-and-Compatibility-1.3.6.md)
 - [v1.3.7 功能复核与修复验证](docs/testing/FaultDetect-Review-Fixes-1.3.7.md)
+- [v1.3.8 能力与适配边界验证](docs/testing/FaultDetect-Capability-Coverage-1.3.8.md)
+- [能力与适配边界](docs/能力与适配边界.md)
 - [浏览器 UI 冒烟结果](docs/testing/FaultDetect-UI-Smoke-20261106.json)
 - [旧库迁移报告](docs/testing/FaultDetect-Migration-20261106.json)
 - [LLM 增强验证](docs/testing/FaultDetect-LLM-Validation-20261106.md)
@@ -291,7 +318,7 @@ docker compose -f docker-compose-java.yml up -d
 - [现场任务验收](docs/testing/FaultDetect-Field-Task-20261105.md)
 - [可重复回归脚本](scripts/run-faultdetect-regression.ps1)
 - [本地故障目标](scripts/faultdetect_mock_target.py)
-- [v1.3.7 发版说明](RELEASE_NOTES_V1.3.7.md)
+- [v1.3.8 发版说明](RELEASE_NOTES_V1.3.8.md)
 - [产品化完整验证](docs/testing/FaultDetect-Operational-Validation-20261106.md)
 - [全功能验收报告](docs/testing/FaultDetect-Full-Acceptance-20261106.md)
 - [安全边界](docs/security/SECURITY-BOUNDARY.md)
@@ -301,7 +328,7 @@ docker compose -f docker-compose-java.yml up -d
 ```powershell
 .\scripts\run-faultdetect-regression.ps1 `
   -BaseUrl http://127.0.0.1:8000 `
-  -Label desktop-v1.3.7
+  -Label desktop-v1.3.8
 
 cd frontend-vue3
 npm run test:ui

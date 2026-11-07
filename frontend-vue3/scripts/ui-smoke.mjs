@@ -129,6 +129,9 @@ try {
 
     await page.locator('.side-nav-item', { hasText: '使用教学' }).click()
     assert.equal(await page.locator('.demo-url-row').count(), 3)
+    await page.locator('.scenario-chips span').first().waitFor({ state: 'attached' })
+    assert.equal(await page.locator('.scenario-chips span').count(), 132)
+    assert.ok((await page.locator('.capability-matrix').innerText()).includes('明确不覆盖'))
     await page.locator('.demo-url-row').first().getByRole('button', { name: '复制' }).click()
     await page.waitForTimeout(200)
     assert.match(await page.evaluate(() => navigator.clipboard.readText()), /\/demo\/sites\/orders\.html$/)
@@ -287,6 +290,7 @@ try {
         tutorial_demo_statuses: demoStatuses,
         tutorial_demo_pages: demoPages,
         status_code_search_verified: true,
+        full_scenario_catalog_verified: true,
         advanced_diagnostics_collapsed_by_default: true,
         clear_result_verified: true,
         custom_scenario_preflight_warned: true,

@@ -98,7 +98,7 @@ await browserError.getByRole('button', { name: '返回地址' }).click()
 let screenshotWarning = ''
 try {
     await mainPage.screenshot({
-        path: path.join(outputDir, 'FaultDetect-Tutorial-1.3.7.png'),
+    path: path.join(outputDir, 'FaultDetect-Tutorial-1.3.8.png'),
         fullPage: false,
         timeout: 15000
     })
@@ -108,7 +108,7 @@ try {
 
 const result = {
     ok: true,
-    version: '1.3.7',
+    version: '1.3.8',
     tutorial_nav_rendered: true,
     built_in_demo_opened: true,
     get_action_mapped: true,
@@ -126,7 +126,7 @@ const result = {
     page_errors: pageErrors
 }
 fs.writeFileSync(
-    path.join(outputDir, 'FaultDetect-Tutorial-1.3.7.json'),
+    path.join(outputDir, 'FaultDetect-Tutorial-1.3.8.json'),
     JSON.stringify(result, null, 2),
     'utf8'
 )

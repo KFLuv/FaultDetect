@@ -1,7 +1,7 @@
 {
-  "generated_at": "2026-11-08T00:15:06+08:00",
+  "generated_at": "2026-11-08T01:38:42+08:00",
   "base_url": "http://127.0.0.1:8000",
-  "report_id": "RPT_20261108001503235001",
+  "report_id": "RPT_20261108013839519001",
   "nav_items": 7,
   "old_tab_nav": false,
   "clipboard_contains_report": true,
@@ -38,6 +38,7 @@
     }
   },
   "status_code_search_verified": true,
+  "full_scenario_catalog_verified": true,
   "advanced_diagnostics_collapsed_by_default": true,
   "clear_result_verified": true,
   "custom_scenario_preflight_warned": true,
@@ -57,7 +58,7 @@
   "mobile_sidebar_width": 58,
   "dialogs": [
     "汇报文本已复制到剪贴板",
-    "确定删除报告 RPT_20261108001503235001？此操作不可恢复。",
+    "确定删除报告 RPT_20261108013839519001？此操作不可恢复。",
     "研发交接包已复制"
   ]
 }

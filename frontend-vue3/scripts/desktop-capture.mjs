@@ -76,7 +76,7 @@ assert.deepEqual(pageErrors, [])
 
 const result = {
     ok: true,
-    version: '1.3.7',
+    version: '1.3.8',
     capture_url: capturePage.url(),
     captured_method: 'GET',
     captured_status: 500,
@@ -93,7 +93,7 @@ const result = {
     page_errors: pageErrors
 }
 fs.writeFileSync(
-    path.join(outputDir, 'FaultDetect-Capture-Assistant-1.3.7.json'),
+    path.join(outputDir, 'FaultDetect-Capture-Assistant-1.3.8.json'),
     JSON.stringify(result, null, 2),
     'utf8'
 )

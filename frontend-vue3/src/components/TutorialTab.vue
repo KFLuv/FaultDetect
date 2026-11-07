@@ -138,6 +138,73 @@
             </section>
         </div>
 
+        <section class="capability-matrix">
+            <div class="panel-heading">
+                <ShieldCheck :size="18" />
+                <div>
+                    <h3>FaultDetect 现在到底能测什么</h3>
+                    <p>按现场证据来源拆分。这里写的是能力边界，不是“所有问题都能自动定位”的承诺。</p>
+                </div>
+            </div>
+
+            <div class="capability-grid">
+                <article v-for="group in capabilityGroups" :key="group.title">
+                    <h4>{{ group.title }}</h4>
+                    <ul>
+                        <li v-for="item in group.items" :key="item">{{ item }}</li>
+                    </ul>
+                </article>
+            </div>
+
+            <div class="scope-matrix">
+                <article class="scope-column supported">
+                    <h4>可直接做</h4>
+                    <ul>
+                        <li>Web HTTP / HTTPS 接口与页面</li>
+                        <li>GET / HEAD 只读自动检测</li>
+                        <li>内置窗口采集和按钮请求关联</li>
+                        <li>POST 等写请求失败快照</li>
+                        <li>Cookie、Token、自定义头和 Trace ID</li>
+                    </ul>
+                </article>
+                <article class="scope-column limited">
+                    <h4>有条件可用</h4>
+                    <ul>
+                        <li v-for="item in limitedCases" :key="item">{{ item }}</li>
+                    </ul>
+                </article>
+                <article class="scope-column unsupported">
+                    <h4>明确不覆盖</h4>
+                    <ul>
+                        <li v-for="item in unsupportedCases" :key="item">{{ item }}</li>
+                    </ul>
+                </article>
+            </div>
+
+            <details class="scenario-catalog">
+                <summary>
+                    展开全部 {{ store.allScenarios.length }} 个内置可匹配故障场景
+                </summary>
+                <p class="catalog-note">
+                    这些是知识库可识别、可辅助归因的场景，不等于每个现场问题都能一次定位。
+                    最终结论仍需结合实测状态码、响应内容、差分结果、Trace 和现场日志复核。
+                </p>
+                <div class="scenario-groups">
+                    <article v-for="group in groupedScenarios" :key="group.key" class="scenario-group">
+                        <h4>
+                            {{ group.label }}
+                            <span>{{ group.items.length }}</span>
+                        </h4>
+                        <div class="scenario-chips">
+                            <span v-for="scenario in group.items" :key="scenario.id">
+                                {{ scenario.name }}
+                            </span>
+                        </div>
+                    </article>
+                </div>
+            </details>
+        </section>
+
         <section class="real-system">
             <div class="panel-heading">
                 <BriefcaseBusiness :size="18" />
@@ -157,7 +224,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import {
     AppWindow,
     BriefcaseBusiness,
@@ -175,12 +242,120 @@ import {
     ScanSearch,
     ShieldCheck
 } from 'lucide-vue-next'
-import { copyText } from '../api'
+import { catLabel, copyText, loadScenarios, store } from '../api'
 
 const emit = defineEmits(['demo-opened'])
 const desktopAvailable = Boolean(window.faultDetectDesktop?.openCapture)
 const origin = window.location.origin
 const copiedUrl = ref('')
+const capabilityGroups = [
+    {
+        title: '连通性与网络',
+        items: [
+            'URL、域名、端口与服务存活检查',
+            'DNS、连接拒绝、超时、断网和防火墙提示',
+            'HTTP / HTTPS、重定向、HTTP 版本与 TLS 错误',
+            '代理、VPN 和企业网络入口，前提是当前电脑能访问目标'
+        ]
+    },
+    {
+        title: 'HTTP、状态码与响应',
+        items: [
+            '2xx、3xx、4xx、5xx 与未收录状态码',
+            '状态码、响应头、响应体、耗时和错误关键词',
+            'GBK / UTF-8 等响应编码与中文乱码',
+            '业务码、异常类、堆栈线索和 JSON 解析错误'
+        ]
+    },
+    {
+        title: '认证、会话与权限',
+        items: [
+            'Cookie、Bearer、Basic、Token、JWT 和自定义认证头',
+            '未登录、Token 过期、会话失效和 401 / 403',
+            'RBAC、数据权限和菜单权限与接口权限不一致',
+            'SSO / OAuth / SAML 登录弹窗允许在应用内继续登录'
+        ]
+    },
+    {
+        title: '接口契约与前端表现',
+        items: [
+            '字段缺失、字段名不匹配、类型错误和 Content-Type 错误',
+            '请求方法错误、接口不存在、后端未实现和旧接口残留',
+            '成功但无提示、列表不刷新、跳转错误和前端误判',
+            '缓存、静态资源、分页、下载、断点续传和请求头超限'
+        ]
+    },
+    {
+        title: '服务、网关与性能',
+        items: [
+            '后端未启动、服务崩溃、服务维护和卡死',
+            '502、503、504、网关路由、上传限制和代理改写',
+            '限流、过载、慢 SQL、第三方超时和连接池耗尽',
+            'CORS、预检请求、WAF、请求头和 URI 限制'
+        ]
+    },
+    {
+        title: '数据库与业务数据',
+        items: [
+            '数据库无数据、表不存在、连接拒绝和唯一约束冲突',
+            '单行查询返回多行及被映射为 417 / 200 的业务异常',
+            '重复提交、乐观锁、资源锁、付费状态和合规拦截',
+            '业务码成功但数据为空、权限过滤和前后端字段契约问题'
+        ]
+    },
+    {
+        title: '现场采集与证据',
+        items: [
+            '在主窗口内打开 Web 系统并自动关联按钮与请求',
+            '记录期间的 XHR / Fetch、页面导航和失败请求',
+            'GET / HEAD 只读重放与差分隔离实验',
+            'POST / PUT / PATCH / DELETE 失败快照与脱敏请求体',
+            'Trace ID、日志模板、研发交接包和历史跟进'
+        ]
+    }
+]
+
+const limitedCases = [
+    'SSO 弹窗能作为应用内认证窗口打开，但极端企业安全策略仍需现场验证',
+    'VPN、代理、客户端证书和 MFA 取决于当前桌面环境是否能正常访问目标',
+    'CORS 和浏览器安全策略只能结合请求、失败页面与症状辅助判断，不能替代浏览器控制台',
+    'POST / PUT / PATCH / DELETE 可生成失败快照和交接信息，但不会自动重放或自动修复',
+    '文件上传、多步骤事务和一次性验证码场景只能保留采集快照，不能保证可重复诊断',
+    'WAF / CDN 可能对内置窗口和服务端探测返回不同结果，需要结合现场差异复核'
+]
+
+const unsupportedCases = [
+    '不监听用户原来 Chrome / Edge 中的页面和登录态',
+    '不监听手机 App、Windows 原生客户端或系统级全部网络流量',
+    '不支持 WebSocket、SSE 消息内容和长连接状态诊断',
+    '不做自动登录、自动提交、自动删除、自动修改或任何写操作',
+    '不做压测、并发压测、故障注入和性能容量评估',
+    '不替代服务端日志、APM、数据库审计、抓包和业务规则复核',
+    '不承诺仅凭一次 HTTP 响应定位任何系统的最终根因'
+]
+
+const categoryOrder = [
+    'network', 'service', 'auth', 'permission', 'frontend',
+    'backend', 'database', 'performance', 'config', 'business'
+]
+
+const groupedScenarios = computed(() => {
+    const groups = new Map()
+    for (const scenario of store.allScenarios) {
+        const key = scenario.root_cause || 'other'
+        if (!groups.has(key)) groups.set(key, [])
+        groups.get(key).push(scenario)
+    }
+    const known = categoryOrder
+        .filter(key => groups.has(key))
+        .map(key => ({ key, label: catLabel(key), items: groups.get(key) }))
+    const remaining = [...groups.keys()]
+        .filter(key => !categoryOrder.includes(key))
+        .sort()
+        .map(key => ({ key, label: catLabel(key), items: groups.get(key) }))
+    return [...known, ...remaining]
+})
+
 const demoCases = [
     {
         name: '订单管理系统',
@@ -218,6 +393,15 @@ async function openDemoSite(item) {
     await window.faultDetectDesktop.openCapture(item.url)
     emit('demo-opened')
 }
+
+onMounted(async () => {
+    if (store.allScenarios.length) return
+    try {
+        await loadScenarios()
+    } catch (error) {
+        console.error('加载场景覆盖清单失败', error)
+    }
+})
 </script>
 
 <style scoped>
@@ -231,7 +415,8 @@ async function openDemoSite(item) {
 .demo-panel,
 .lesson-panel,
 .real-system,
-.demo-urls {
+.demo-urls,
+.capability-matrix {
     border: 1px solid var(--border);
     border-radius: 8px;
     background: var(--bg-card);
@@ -492,6 +677,138 @@ async function openDemoSite(item) {
     color: var(--text-dim);
 }
 
+.capability-matrix {
+    padding: 19px;
+}
+
+.capability-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 15px;
+}
+
+.capability-grid article {
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    background: var(--bg-inset);
+}
+
+.capability-grid h4,
+.scope-column h4 {
+    font-size: 12px;
+}
+
+.capability-grid ul,
+.scope-column ul {
+    margin: 8px 0 0 17px;
+    color: var(--text-dim);
+    font-size: 11px;
+    line-height: 1.7;
+}
+
+.scope-matrix {
+    display: grid;
+    grid-template-columns: minmax(0, .85fr) minmax(0, 1.25fr) minmax(0, 1.25fr);
+    gap: 10px;
+    margin-top: 12px;
+}
+
+.scope-column {
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    background: var(--bg-card);
+}
+
+.scope-column.supported {
+    border-color: color-mix(in srgb, var(--success) 32%, var(--border));
+}
+
+.scope-column.limited {
+    border-color: color-mix(in srgb, var(--warning) 34%, var(--border));
+}
+
+.scope-column.unsupported {
+    border-color: color-mix(in srgb, var(--danger) 30%, var(--border));
+}
+
+.scope-column.supported h4 {
+    color: var(--success);
+}
+
+.scope-column.limited h4 {
+    color: var(--warning);
+}
+
+.scope-column.unsupported h4 {
+    color: var(--danger);
+}
+
+.scenario-catalog {
+    margin-top: 12px;
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    background: var(--bg-inset);
+}
+
+.scenario-catalog summary {
+    padding: 13px 15px;
+    color: var(--primary);
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.catalog-note {
+    padding: 0 15px 12px;
+    color: var(--text-dim);
+    font-size: 10px;
+    line-height: 1.65;
+}
+
+.scenario-groups {
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+    padding: 0 15px 15px;
+}
+
+.scenario-group {
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-card);
+}
+
+.scenario-group h4 {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 8px;
+    font-size: 11px;
+}
+
+.scenario-group h4 span {
+    color: var(--text-dim);
+}
+
+.scenario-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+}
+
+.scenario-chips span {
+    padding: 3px 7px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--bg-inset);
+    color: var(--text-dim);
+    font-size: 10px;
+}
+
 .check-grid {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -525,11 +842,16 @@ async function openDemoSite(item) {
 
 @media (max-width: 980px) {
     .flow-grid,
-    .check-grid {
+    .check-grid,
+    .capability-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
     .tutorial-columns {
+        grid-template-columns: 1fr;
+    }
+
+    .scope-matrix {
         grid-template-columns: 1fr;
     }
 }
@@ -542,7 +864,8 @@ async function openDemoSite(item) {
     }
 
     .flow-grid,
-    .check-grid {
+    .check-grid,
+    .capability-grid {
         grid-template-columns: 1fr;
     }
 
