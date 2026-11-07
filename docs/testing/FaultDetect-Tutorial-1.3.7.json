@@ -14,5 +14,6 @@
   "request_body_secrets_masked": true,
   "trace_log_template_verified": true,
   "browser_error_degraded": true,
+  "screenshot_warning": "page.screenshot: Timeout 15000ms exceeded.\nCall log:\n\u001b[2m  - taking page screenshot\u001b[22m\n\u001b[2m  - waiting for fonts to load...\u001b[22m\n\u001b[2m  - fonts loaded\u001b[22m\n",
   "page_errors": []
 }

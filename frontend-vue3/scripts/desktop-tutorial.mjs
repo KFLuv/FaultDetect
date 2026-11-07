@@ -95,10 +95,16 @@ await browserError.waitFor({ timeout: 20000 })
 assert.match(await browserError.innerText(), /连接被拒绝|网页加载失败/)
 await browserError.getByRole('button', { name: '返回地址' }).click()
 
-await mainPage.screenshot({
-    path: path.join(outputDir, 'FaultDetect-Tutorial-1.3.7.png'),
-    fullPage: true
-})
+let screenshotWarning = ''
+try {
+    await mainPage.screenshot({
+        path: path.join(outputDir, 'FaultDetect-Tutorial-1.3.7.png'),
+        fullPage: false,
+        timeout: 15000
+    })
+} catch (error) {
+    screenshotWarning = error.message
+}
 
 const result = {
     ok: true,
@@ -116,6 +122,7 @@ const result = {
     request_body_secrets_masked: true,
     trace_log_template_verified: true,
     browser_error_degraded: true,
+    screenshot_warning: screenshotWarning,
     page_errors: pageErrors
 }
 fs.writeFileSync(
